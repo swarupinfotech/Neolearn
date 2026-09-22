@@ -1,0 +1,5 @@
+# Vendored third-party WASM/JS runtime assets — do not reformat or whitespace-check
+public/sql.js/** -whitespace
+
+# Always treat compiled WASM as binary
+*.wasm binary

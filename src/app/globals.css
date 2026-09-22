@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --cl-bg: #f7f9f8;
+  --cl-surface: #ffffff;
+  --cl-surface-2: #f1f5f3;
+  --cl-border: #e2e8e5;
+  --cl-text: #0f172a;
+  --cl-muted: #64748b;
+  --cl-primary: #16a34a;
+  --cl-primary-strong: #15803d;
+  --cl-primary-soft: #dcfce7;
+  --cl-primary-contrast: #052e16;
+  --cl-ring: #22c55e;
+}
+
+.dark {
+  --cl-bg: #0b1210;
+  --cl-surface: #111a17;
+  --cl-surface-2: #17211d;
+  --cl-border: #24312c;
+  --cl-text: #e7f2ec;
+  --cl-muted: #8ea69a;
+  --cl-primary: #4ade80;
+  --cl-primary-strong: #22c55e;
+  --cl-primary-soft: #052e16;
+  --cl-primary-contrast: #052e16;
+  --cl-ring: #4ade80;
+}
+
+@theme inline {
+  --color-bg: var(--cl-bg);
+  --color-surface: var(--cl-surface);
+  --color-surface2: var(--cl-surface-2);
+  --color-border: var(--cl-border);
+  --color-fg: var(--cl-text);
+  --color-muted: var(--cl-muted);
+  --color-primary: var(--cl-primary);
+  --color-primary-strong: var(--cl-primary-strong);
+  --color-primary-soft: var(--cl-primary-soft);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "Consolas", monospace;
+}
+
+* {
+  border-color: var(--cl-border);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--cl-bg);
+  color: var(--cl-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Block-style cards */
+.card {
+  background: var(--cl-surface);
+  border: 1px solid var(--cl-border);
+  border-radius: 0.6rem;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.card-hover {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.10);
+}
+
+/* Focus visibility for keyboard users */
+:focus-visible {
+  outline: 2px solid var(--cl-ring);
+  outline-offset: 2px;
+}
+
+.code-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.code-scroll::-webkit-scrollbar-thumb {
+  background: var(--cl-border);
+  border-radius: 8px;
+}
+
+.cm-editor {
+  font-family: var(--font-mono) !important;
+  font-size: 14px !important;
+}
+.cm-editor.cm-focused {
+  outline: none !important;
+}
+.cm-scroller {
+  font-family: var(--font-mono) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
