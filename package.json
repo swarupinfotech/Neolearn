@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "vercel-build": "prisma generate && prisma db push && next build",
+    "vercel-build": "prisma generate && node -e \"console.log('DBHOST=' + (process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).host : 'MISSING'))\" && prisma db push && echo PUSH_OK && next build",
     "start": "next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
