@@ -20,7 +20,7 @@ test("rejects a bad password", async ({ page }) => {
   await expect(page.getByRole("alert")).toBeVisible();
 });
 
-test("registers a new account and lands on the dashboard", async ({ page }) => {
+test("registers a new account, completes onboarding, and lands on the dashboard", async ({ page }) => {
   const uniq = `e2e${Date.now().toString().slice(-8)}`;
   await page.goto("/signup");
   await page.getByLabel("Email").fill(`${uniq}@neolearn.test`);
@@ -30,5 +30,17 @@ test("registers a new account and lands on the dashboard", async ({ page }) => {
   await page.getByLabel("Confirm password").fill(DEMO_PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
 
+  await expect(page).toHaveURL(/\/onboarding/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("What do you want to learn?");
+
+  await page.getByRole("button", { name: "Python" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Beginner" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Projects" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Open my dashboard" }).click();
+
   await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Welcome back");
 });
