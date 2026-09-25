@@ -124,7 +124,7 @@ export default async function AdminSystemPage() {
 
       <Section
         title="Platform settings"
-        subtitle="Key/value store â€” JSON is parsed automatically"
+        subtitle="Key/value store — JSON is parsed automatically"
         action={<Settings2 className="h-4 w-4 text-muted" />}
       >
         <SettingEditor
@@ -163,8 +163,9 @@ export default async function AdminSystemPage() {
       </Section>
 
       <Card className="text-xs text-muted">
-        All admin mutations write an <span className="font-mono">AnalyticsEvent</span> and appear in the audit log
-        immediately. Page-view data is collected server-side with hashed IPs only â€” raw addresses are never stored.
+        All admin mutations record an <span className="font-mono">AnalyticsEvent</span> and invalidate the
+        dashboard cache immediately. Page-view data is collected server-side with hashed IPs only — raw
+        addresses are never stored.
       </Card>
     </div>
   );

@@ -99,7 +99,7 @@ export default async function AdminUsersPage({
         ) : (
           <Table
             minWidth={1080}
-            head={["User", "Email", "Role", "Status", "XP", "Level", "Lessons", "Posts", "Sessions", "Last seen", "Joined", ""]}
+            head={["User", "Email", "Role", "Status", "XP", "Level", "Lessons", "Posts", "Active days", "Last seen", "Joined", ""]}
           >
             {result.rows.map((u) => (
               <tr key={u.id} className="hover:bg-surface2/40">
@@ -129,7 +129,7 @@ export default async function AdminUsersPage({
                 <Td className="tabular-nums">Lv {u.level}</Td>
                 <Td className="tabular-nums">{u.lessons}</Td>
                 <Td className="tabular-nums">{u.posts}</Td>
-                <Td className="tabular-nums">{u.sessionCount}</Td>
+                <Td className="tabular-nums">{u.activeDays}</Td>
                 <Td className="text-muted whitespace-nowrap">
                   {u.lastSeenAt ? formatDate(u.lastSeenAt) : "—"}
                 </Td>

@@ -188,35 +188,39 @@ async function computeOverview(): Promise<Overview> {
 
   // One round trip for every scalar the overview needs. The primary is ~500ms
   // away, so 28 separate counts would cost ~7s of pure queueing.
+  //
+  // Every count is cast to ::int: PostgreSQL returns count(*) as bigint, which
+  // Prisma hands back as a BigInt, and mixing that with the Number arithmetic
+  // below throws "Cannot mix BigInt and other types".
   const dbLatencyStart = Date.now();
   const totals = await prisma.$queryRaw<TotalsRow[]>`
     SELECT
-      (SELECT count(*) FROM "User")                                        AS users,
-      (SELECT count(*) FROM "User" WHERE status = 'active')               AS active_users,
-      (SELECT count(*) FROM "User" WHERE status = 'suspended')             AS suspended,
-      (SELECT count(*) FROM "User" WHERE role = 'ADMIN')                  AS admins,
-      (SELECT count(*) FROM "User" WHERE "isPremium" = true)              AS premium,
-      (SELECT count(*) FROM "User" WHERE "createdAt" >= ${from7})          AS new_users_7d,
-      (SELECT count(*) FROM "User" WHERE "createdAt" >= ${prev7} AND "createdAt" < ${from7}) AS new_users_prev_7d,
-      (SELECT count(*) FROM "Course")                                      AS courses,
-      (SELECT count(*) FROM "Lesson")                                      AS lessons,
-      (SELECT count(*) FROM "Quiz")                                        AS quizzes,
-      (SELECT count(*) FROM "Challenge")                                   AS challenges,
-      (SELECT count(*) FROM "Project")                                     AS projects,
-      (SELECT count(*) FROM "LearningPath")                                AS paths,
-      (SELECT count(*) FROM "CommunityPost")                               AS posts,
-      (SELECT count(*) FROM "Comment")                                     AS comments,
-      (SELECT count(*) FROM "CommunityReport")                             AS reports,
-      (SELECT count(*) FROM "CommunityReport" WHERE status = 'OPEN')       AS open_reports,
-      (SELECT count(*) FROM "Certificate")                                 AS certificates,
-      (SELECT count(*) FROM "Subscription")                                AS subscriptions,
-      (SELECT count(*) FROM "CodeExecutionLog")                            AS code_runs,
-      (SELECT count(*) FROM "LessonProgress" WHERE "completedAt" >= ${from30})  AS lesson_completions,
-      (SELECT count(*) FROM "QuizAttempt" WHERE "startedAt" >= ${from30})      AS quiz_attempts,
-      (SELECT count(*) FROM "ChallengeAttempt" WHERE "createdAt" >= ${from30}) AS challenge_attempts,
-      (SELECT count(*) FROM "ProjectSubmission" WHERE "submittedAt" >= ${from30}) AS project_submissions,
-      (SELECT count(*) FROM "CodeExecutionLog" WHERE "createdAt" >= ${from30})  AS code_executions,
-      (SELECT count(*) FROM "Onboarding")                                  AS onboards
+      (SELECT count(*)::int FROM "User")                                        AS users,
+      (SELECT count(*)::int FROM "User" WHERE status = 'active')               AS active_users,
+      (SELECT count(*)::int FROM "User" WHERE status = 'suspended')             AS suspended,
+      (SELECT count(*)::int FROM "User" WHERE role = 'ADMIN')                  AS admins,
+      (SELECT count(*)::int FROM "User" WHERE "isPremium" = true)              AS premium,
+      (SELECT count(*)::int FROM "User" WHERE "createdAt" >= ${from7})          AS new_users_7d,
+      (SELECT count(*)::int FROM "User" WHERE "createdAt" >= ${prev7} AND "createdAt" < ${from7}) AS new_users_prev_7d,
+      (SELECT count(*)::int FROM "Course")                                      AS courses,
+      (SELECT count(*)::int FROM "Lesson")                                      AS lessons,
+      (SELECT count(*)::int FROM "Quiz")                                        AS quizzes,
+      (SELECT count(*)::int FROM "Challenge")                                   AS challenges,
+      (SELECT count(*)::int FROM "Project")                                     AS projects,
+      (SELECT count(*)::int FROM "LearningPath")                                AS paths,
+      (SELECT count(*)::int FROM "CommunityPost")                               AS posts,
+      (SELECT count(*)::int FROM "Comment")                                     AS comments,
+      (SELECT count(*)::int FROM "CommunityReport")                             AS reports,
+      (SELECT count(*)::int FROM "CommunityReport" WHERE status = 'OPEN')       AS open_reports,
+      (SELECT count(*)::int FROM "Certificate")                                 AS certificates,
+      (SELECT count(*)::int FROM "Subscription")                                AS subscriptions,
+      (SELECT count(*)::int FROM "CodeExecutionLog")                            AS code_runs,
+      (SELECT count(*)::int FROM "LessonProgress" WHERE "completedAt" >= ${from30})  AS lesson_completions,
+      (SELECT count(*)::int FROM "QuizAttempt" WHERE "startedAt" >= ${from30})      AS quiz_attempts,
+      (SELECT count(*)::int FROM "ChallengeAttempt" WHERE "createdAt" >= ${from30}) AS challenge_attempts,
+      (SELECT count(*)::int FROM "ProjectSubmission" WHERE "submittedAt" >= ${from30}) AS project_submissions,
+      (SELECT count(*)::int FROM "CodeExecutionLog" WHERE "createdAt" >= ${from30})  AS code_executions,
+      (SELECT count(*)::int FROM "Onboarding")                                  AS onboards
   `;
   const dbLatencyMs = Date.now() - dbLatencyStart;
   const dbOk = !!totals[0];
@@ -232,7 +236,6 @@ async function computeOverview(): Promise<Overview> {
     challengeAttempts,
     projectSubmissions,
     courseProgress,
-    onboards,
   ] = await Promise.all([
     prisma.user.findMany({ where: { createdAt: { gte: from30 } }, select: { createdAt: true } }),
     prisma.pageView.findMany({ where: { createdAt: { gte: from30 } }, select: { createdAt: true } }),
@@ -252,7 +255,6 @@ async function computeOverview(): Promise<Overview> {
       where: { updatedAt: { gte: from30 } },
       select: { completed: true, completedLessons: true, totalLessons: true, courseId: true },
     }),
-    Promise.resolve(0),
   ]);
 
   const users = t.users;
@@ -263,6 +265,7 @@ async function computeOverview(): Promise<Overview> {
   const quizAttemptsTotal = t.quiz_attempts;
   const challengeAttemptsTotal = t.challenge_attempts;
   const projectSubmissionsTotal = t.project_submissions;
+  const onboards = t.onboards;
 
   const keys = dayKeys(days);
   const newUsersByDay = bucketByDay(newUserRows);
@@ -534,7 +537,8 @@ export interface UserRow {
   lastSeenAt: Date | null;
   lessons: number;
   posts: number;
-  sessionCount: number;
+  /** Distinct days with recorded activity in the last 30 days. */
+  activeDays: number;
 }
 
 export interface UserListResult {
@@ -604,6 +608,24 @@ async function computeUsers(opts: {
     prisma.user.count({ where: { emailVerified: null } }),
   ]);
 
+  // Sessions are stateless JWTs, so there is no session table to count. The
+  // closest honest signal is how many distinct days each user was active on.
+  const pageIds = rows.map((r) => r.id);
+  const activitySince = since(30);
+  const activeRows = pageIds.length
+    ? await prisma.analyticsEvent.findMany({
+        where: { userId: { in: pageIds }, createdAt: { gte: activitySince } },
+        select: { userId: true, createdAt: true },
+      })
+    : [];
+  const activeDays = new Map<string, Set<string>>();
+  for (const e of activeRows) {
+    if (!e.userId) continue;
+    const set = activeDays.get(e.userId) ?? new Set<string>();
+    set.add(e.createdAt.toISOString().slice(0, 10));
+    activeDays.set(e.userId, set);
+  }
+
   return {
     rows: rows.map((u) => ({
       id: u.id,
@@ -621,7 +643,7 @@ async function computeUsers(opts: {
       lastSeenAt: u.lessonProgress[0]?.updatedAt ?? null,
       lessons: u._count.pageViews,
       posts: u._count.communityPosts,
-      sessionCount: 0,
+      activeDays: activeDays.get(u.id)?.size ?? 0,
     })),
     total,
     page,

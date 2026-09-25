@@ -60,7 +60,9 @@ export function AppSidebar({ role }: { role: string }) {
         {social.map((item) => (
           <SidebarLink key={item.href} {...item} />
         ))}
-        {role === "ADMIN" || role === "MODERATOR" ? (
+        {/* The admin console is gated on the ADMIN role, so moderators must not
+            be offered a link that only redirects them back to the dashboard. */}
+        {role === "ADMIN" ? (
           <>
             <p className="px-3 pt-4 text-[11px] font-semibold uppercase text-muted mb-1">Staff</p>
             <SidebarLink label="Admin" href="/admin" icon={Shield} />
