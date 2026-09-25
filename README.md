@@ -6,7 +6,7 @@ A gamified, full-stack coding-learning platform. Users take lessons, quizzes, ch
 
 - **Framework:** Next.js 16 (App Router, Turbopack, React 19)
 - **Language:** TypeScript 5.7 (strict, `noUncheckedIndexedAccess`)
-- **Database:** SQLite (dev/test, zero-setup) via Prisma 6 — schema is PostgreSQL-compatible (see `docs/POSTGRES.md`)
+- **Database:** PostgreSQL (Supabase) via Prisma 6, connected through the Supabase pooler in transaction mode — see `docs/POSTGRES.md`
 - **Sandbox:** `quickjs-emscripten` (JS), `pyodide` (Python), `sql.js` (SQL) — all in-process/WASM, no host access
 - **Auth:** custom session (signed JWT in HTTP-only cookie + CSRF), bcrypt password hashing, email verification & password reset (nodemailer, dev-mode prints links)
 - **Code editor:** CodeMirror 6 via `@uiw/react-codemirror`
@@ -22,15 +22,19 @@ npm install
 # 2. Configure environment
 cp .env.example .env.local   # then edit values (AUTH_SECRET etc.)
 
-# 3. Create the SQLite database and seed demo content
-npx prisma db push
-npx tsx prisma/seed.ts
+# 3. Push the schema to Supabase and seed demo content
+npm run db:push
+npm run db:seed
 
 # 4. Run
 npm run dev                 # http://localhost:3000
 ```
 
-> Prisma caches `DATABASE_URL` from `.env`; paths are relative to `prisma/` (`file:./dev.db`).
+> `DATABASE_URL` must be the Supabase **transaction pooler** (port 6543) with the
+> project ref in the username — `<role>.<PROJECT_REF>` — and `pgbouncer=true`.
+> A plain `postgres` user fails with `ENOIDENTIFIER: no tenant identifier provided`.
+> Direct connections (port 5432) exhaust Supabase's 15-connection pool under
+> serverless load (`EMAXCONNSESSION`).
 
 ## Demo accounts
 

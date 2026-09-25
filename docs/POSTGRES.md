@@ -1,6 +1,26 @@
 # Running NeoLearn on PostgreSQL
 
-The repo defaults to SQLite so the project runs with zero setup. The Prisma schema is deliberately kept **PostgreSQL-compatible**: only portable column types are used (`String id @default(cuid())`, `DateTime @default(now())`, Prisma `Json`), with no `@db.*` hints, `BigInt`, `Decimal`, or SQLite-only features. Provider switch is one line.
+The schema provider is `postgresql` and the live database is Supabase, reached through the **Supabase connection pooler**. Only portable column types are used (`String id @default(cuid())`, `DateTime @default(now())`, Prisma `Json`), with no `@db.*` hints, `BigInt`, `Decimal`, or SQLite-only features.
+
+## Supabase connection string (this project)
+
+```
+postgresql://<role>.<PROJECT_REF>:<PASSWORD>@aws-0-<REGION>.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=2&connect_timeout=30
+```
+
+Three things that will bite you if you ignore them:
+
+| Rule | Why |
+| --- | --- |
+| Username must be `<role>.<PROJECT_REF>` | A plain `postgres` username fails with `ENOIDENTIFIER: no tenant identifier provided` |
+| Use port **6543** (transaction mode) with `pgbouncer=true` | Direct 5432 connections are held by each serverless lambda and exhaust the 15-connection pool: `EMAXCONNSESSION: max clients reached in session mode` |
+| Keep `connection_limit` small (1-2) per instance | Limits the number of pooler slots a single serverless instance can hold |
+
+Non-superuser roles also need RLS disabled or bypassed on existing tables, otherwise every query fails with `new row violates row-level security policy`:
+
+```sql
+ALTER ROLE <role> BYPASSRLS;
+```
 
 ## 1. Spin up a database
 
