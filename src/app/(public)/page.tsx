@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "NeoLearn — Learn. Code. Practice. Build.",
   description:
