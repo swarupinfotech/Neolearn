@@ -68,6 +68,7 @@ model User {
   pathProgress         UserPathProgress[]
   certificates         Certificate[]
   subscriptions        Subscription[]
+  pageViews            PageView[]
   codeExecutions       CodeExecutionLog[]
   analyticsEvents      AnalyticsEvent[]
 }
@@ -658,6 +659,31 @@ model AnalyticsEvent {
 
   @@index([type, createdAt])
   @@index([userId, createdAt])
+}
+
+// Traffic analytics. One row per page view. IP is stored only as a salted
+// hash so unique-visitor counts work without keeping raw addresses.
+model PageView {
+  id        String   @id @default(cuid())
+  path      String
+  userId    String?
+  sessionId String?
+  referrer  String?
+  source    String? // referrer bucketed: google | direct | twitter | ...
+  device    String? // desktop | mobile | tablet | bot | other
+  browser   String?
+  os        String?
+  country   String?
+  ipHash    String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([path, createdAt])
+  @@index([userId, createdAt])
+  @@index([source, createdAt])
+  @@index([device, createdAt])
 }
 
 model RateLimit {
