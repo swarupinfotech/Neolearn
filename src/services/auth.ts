@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import type { User } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/password";
@@ -267,8 +268,8 @@ export async function getSessionUser(): Promise<User | null> {
 }
 
 export async function requireUser(): Promise<User> {
-  const user = await getSessionUser();
-  if (!user) throw new Error("AUTH_REQUIRED");
+  const user = await getSessionUser().catch(() => null);
+  if (!user) redirect("/login");
   return user;
 }
 

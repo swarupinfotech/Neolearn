@@ -38,7 +38,7 @@ export default async function CoursesPage({
       : {}),
   };
 
-  const [courses, total] = await Promise.all([
+  const result = await Promise.all([
     prisma.course.findMany({
       where,
       orderBy: { students: "desc" },
@@ -46,7 +46,10 @@ export default async function CoursesPage({
       take: pageSize,
     }),
     prisma.course.count({ where }),
-  ]);
+  ]).catch(() => null);
+
+  const courses = result ? result[0] : [];
+  const total = result ? result[1] : 0;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
