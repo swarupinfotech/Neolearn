@@ -74,15 +74,42 @@ const faqs = [
   { q: "Are certificates verifiable?", a: "Yes. Every certificate has a unique ID and a public verification URL that anyone can check." },
 ];
 
+type CourseItem = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  category: string;
+  language: string;
+  difficulty: string;
+  rating: number;
+  ratingCount: number;
+  students: number;
+  duration: number;
+  icon: string;
+  color: string;
+  xpReward: number;
+  status: string;
+};
+
 export default async function LandingPage() {
-  const courses = await prisma.course.findMany({
-    where: { status: "PUBLISHED" },
-    orderBy: { students: "desc" },
-    take: 6,
-  });
-  const challengeCount = await prisma.challenge.count({ where: { status: "PUBLISHED" } });
-  const lessonCount = await prisma.lesson.count();
-  const userCount = await prisma.user.count();
+  let courses: CourseItem[] = [];
+  let challengeCount = 0;
+  let lessonCount = 0;
+  let userCount = 0;
+  try {
+    const rows = await prisma.course.findMany({
+      where: { status: "PUBLISHED" },
+      orderBy: { students: "desc" },
+      take: 6,
+    });
+    courses = rows as unknown as CourseItem[];
+    challengeCount = await prisma.challenge.count({ where: { status: "PUBLISHED" } });
+    lessonCount = await prisma.lesson.count();
+    userCount = await prisma.user.count();
+  } catch {
+    courses = [];
+  }
 
   return (
     <>
