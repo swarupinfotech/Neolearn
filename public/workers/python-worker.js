@@ -27,12 +27,18 @@ self.onmessage = async (ev) => {
   };
 
   try {
-    // Disable network access in the worker scope before Pyodide runs.
+    // The Pyodide runtime MUST be loaded before network APIs are removed:
+    // its loader uses fetch() internally to pull down pyodide.asm.wasm,
+    // python_stdlib.zip and friends. Nulling fetch first makes
+    // loadPyodide() throw "fetch is not a function".
+    const py = await loadPyodideRuntime();
+
+    // Now that the runtime is initialised, cut network access before any
+    // user code runs so the sandbox cannot reach the network.
     globalThis.fetch = undefined;
     globalThis.XMLHttpRequest = undefined;
     globalThis.WebSocket = undefined;
 
-    const py = await loadPyodideRuntime();
     py.setStdout({ batched: push });
     py.setStderr({ batched: push });
 
@@ -41,10 +47,6 @@ self.onmessage = async (ev) => {
     const timer = setTimeout(() => {
       interrupt[0] = 2; // raise KeyboardInterrupt-style abort
     }, timeoutMs);
-
-    try {
-      py.runPython(`__top = ${JSON.stringify(JSON.stringify(code))}`); // unused guard
-    } catch { /* ignore */ }
 
     py.runPython(`${code}`);
     clearTimeout(timer);
