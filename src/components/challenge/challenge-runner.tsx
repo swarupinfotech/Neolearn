@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { runClientCode } from "@/lib/client-exec";
+import { StdoutGradingPanel, outputsReady } from "@/components/code/stdout-grading-panel";
 import { CheckCircle2, XCircle, Play, Send } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -149,8 +150,7 @@ export function ChallengeRunner({
   const allPublicPassed = localResults !== null && localResults.length > 0 && localResults.every((r) => r.passed);
   // An empty output is legitimate, but only when the learner has said so
   // explicitly. Otherwise a forgotten textarea would silently grade as "".
-  const outputsReady =
-    outputs.length > 0 && outputs.every((o, i) => o.trim().length > 0 || noOutput[i] === true);
+  const canSubmitOutputs = outputsReady(outputs, noOutput);
 
   return (
     <section className="card p-5 sm:p-6">
@@ -176,7 +176,7 @@ export function ChallengeRunner({
 
       {isStdout ? (
         <StdoutGradingPanel
-          hiddenInputs={hiddenInputs}
+          cases={hiddenInputs.map((input, i) => ({ key: `hidden-${i}`, label: `Test ${i + 1} — input`, input }))}
           outputs={outputs}
           noOutput={noOutput}
           onChange={(next) => setOutputs(next)}
@@ -196,7 +196,7 @@ export function ChallengeRunner({
           }}
           submitting={submitting}
           onSubmit={() => void submitForHidden({ outputs })}
-          ready={outputsReady}
+          ready={canSubmitOutputs}
         />
       ) : (
         <div className="flex flex-wrap gap-2 mt-4">
@@ -284,90 +284,5 @@ export function ChallengeRunner({
         Challenge <code className="font-mono">{slug}</code> · {xpReward} XP
       </p>
     </section>
-  );
-}
-
-/**
- * Output-based grading UI.
- *
- * Shows one block per hidden test with its input, and collects the
- * output the learner observed locally. The expected output is compared
- * server-side and never sent to the browser.
- */
-function StdoutGradingPanel({
-  hiddenInputs,
-  outputs,
-  noOutput,
-  onChange,
-  onToggleNoOutput,
-  submitting,
-  onSubmit,
-  ready,
-}: {
-  hiddenInputs: string[];
-  outputs: string[];
-  noOutput: boolean[];
-  onChange: (next: string[]) => void;
-  onToggleNoOutput: (index: number) => void;
-  submitting: boolean;
-  onSubmit: () => void;
-  ready: boolean;
-}) {
-  return (
-    <div className="mt-4 space-y-3">
-      <p className="text-sm text-muted">
-        Run your program once per input below, then paste what it prints. If your program prints nothing for a
-        test, tick that box instead of leaving the textarea empty.
-      </p>
-      {hiddenInputs.map((input, i) => {
-        const id = `stdout-${i}`;
-        const printsNothing = noOutput[i] === true;
-        return (
-          <div key={i} className="rounded-lg border border-border bg-surface2 p-3">
-            <p className="text-xs font-medium text-muted mb-1">Test {i + 1} — input</p>
-            <pre className="text-xs font-mono whitespace-pre-wrap mb-2 max-h-24 overflow-y-auto">
-              {input || "(no input)"}
-            </pre>
-            <label className="text-xs font-medium text-muted block mb-1" htmlFor={id}>
-              Your output
-            </label>
-            <textarea
-              id={id}
-              value={outputs[i] ?? ""}
-              disabled={printsNothing}
-              onChange={(e) => {
-                const next = [...outputs];
-                next[i] = e.target.value;
-                onChange(next);
-                if (e.target.value.length > 0 && noOutput[i]) onToggleNoOutput(i);
-              }}
-              rows={2}
-              spellCheck={false}
-              placeholder={printsNothing ? "This program prints nothing for this input." : "Paste the exact output here…"}
-              className="w-full rounded-lg border border-border bg-surface p-2 text-xs font-mono disabled:opacity-60"
-            />
-            <label className="mt-2 flex items-center gap-1.5 text-xs text-muted cursor-pointer">
-              <input
-                type="checkbox"
-                checked={printsNothing}
-                onChange={() => onToggleNoOutput(i)}
-                className="rounded border-border"
-              />
-              My program prints nothing for this input
-            </label>
-          </div>
-        );
-      })}
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={onSubmit} disabled={submitting || !ready}>
-          <Send className="h-3.5 w-3.5" /> {submitting ? "Grading…" : "Submit output for grading"}
-        </Button>
-        {!ready ? (
-          <span className="text-xs text-muted self-center">
-            Give an output for every test, or tick &ldquo;prints nothing&rdquo;.
-          </span>
-        ) : null}
-      </div>
-    </div>
   );
 }

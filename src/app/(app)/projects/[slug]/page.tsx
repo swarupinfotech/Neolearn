@@ -3,9 +3,24 @@ import { notFound } from "next/navigation";
 import { CheckCircle2, Target, Wrench } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/services/auth";
-import { getProjectBySlug } from "@/services/projects";
+import { getProjectBySlug, projectGradingMode } from "@/services/projects";
 import { Badge } from "@/components/ui/badge";
 import { ProjectRunner } from "@/components/project/project-runner";
+
+const LANGUAGE_LABEL: Record<string, string> = {
+  python: "Python",
+  javascript: "JavaScript",
+  typescript: "TypeScript",
+  sql: "SQL",
+  html: "HTML/CSS",
+  c: "C",
+  cpp: "C++",
+  java: "Java",
+  php: "PHP",
+  go: "Go",
+  rust: "Rust",
+  kotlin: "Kotlin",
+};
 
 function asStringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean) : [];
@@ -48,7 +63,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const criteria = asStringArray(project.criteria);
   const tasks = asTasks(project.tasks);
   const tests =
-    (project.publicTests as unknown as { name: string; input?: unknown; setup?: string; expected: unknown }[]) ?? [];
+    (project.publicTests as unknown as { name: string; input?: unknown; setup?: string; stdin?: string; expected: unknown }[]) ?? [];
+
+  const mode = projectGradingMode(project);
+  const languageLabel = LANGUAGE_LABEL[project.language.toLowerCase()] ?? project.language;
 
   const best = await prisma.projectSubmission.findFirst({
     where: { userId: user.id, projectId: project.id, passed: true },
@@ -62,6 +80,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           <Badge tone="blue">{project.language}</Badge>
           {project.difficulty ? <Badge tone="amber">{project.difficulty}</Badge> : null}
           <Badge tone="green">+{project.xpReward} XP</Badge>
+          {mode === "stdout" ? <Badge tone="amber">Output-based grading</Badge> : null}
           {best ? <Badge tone="green">Completed</Badge> : null}
         </div>
         <h1 className="text-2xl sm:text-3xl font-bold">{project.title}</h1>
@@ -149,8 +168,42 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         </section>
       ) : null}
 
+      {mode === "stdout" ? (
+        <section className="card p-5 border-amber-300 dark:border-amber-800">
+          <h2 className="font-semibold">How this project is graded</h2>
+          <p className="text-sm text-muted mt-2">
+            {languageLabel} does not run inside NeoLearn&apos;s in-browser sandbox, so this project is graded from
+            your program&apos;s output. Build and run it locally, then paste what it prints for each required case
+            below. The server compares your output against the expected output. To be clear about the limit: this
+            verifies the output you recorded, not the program that produced it.
+          </p>
+        </section>
+      ) : null}
+
+      {mode === "stdout" && tests.length > 0 ? (
+        <section className="card p-5">
+          <h2 className="font-semibold mb-3">Required cases</h2>
+          <div className="space-y-2">
+            {tests.map((t, i) => (
+              <div key={i} className="rounded-lg border border-border bg-surface2 p-3 text-sm">
+                <span className="font-mono text-primary">{t.name}</span>
+                <pre className="text-xs mt-2 whitespace-pre-wrap">
+                  <span className="text-muted">Input:</span>{"\n"}
+                  {t.stdin || "(no input)"}
+                  {"\n"}
+                  <span className="text-muted">Expected output:</span>{"\n"}
+                  {String(t.expected)}
+                </pre>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <ProjectRunner
+        gradingMode={mode}
         language={project.language}
+        languageLabel={languageLabel}
         starterCode={project.starterCode}
         tests={tests}
         projectId={project.id}

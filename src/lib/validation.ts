@@ -95,6 +95,9 @@ export const projectSubmitInput = z.object({
   projectId: z.string().min(1),
   code: z.string().min(1).max(SAFETY.MAX_CODE_LENGTH),
   language: z.string().min(1).max(40),
+  // Output-based grading (languages with no in-browser runtime): one captured
+  // stdout per required case, in case order.
+  outputs: z.array(z.string().max(SAFETY.MAX_CODE_LENGTH)).max(20).optional(),
 });
 
 // ------------------------------------------------------------------

@@ -5,13 +5,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { runClientCode } from "@/lib/client-exec";
+import { StdoutGradingPanel, outputsReady } from "@/components/code/stdout-grading-panel";
 import { Play, Send, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 interface TestCase {
   name: string;
   input?: unknown;
-  setup?: string;
+  stdin?: string;
   expected: unknown;
 }
 
@@ -24,13 +25,17 @@ interface SubmitResponse {
 }
 
 export function ProjectRunner({
+  gradingMode,
   language,
+  languageLabel,
   starterCode,
   tests,
   projectId,
   xpReward,
 }: {
+  gradingMode: "function" | "stdout";
   language: string;
+  languageLabel: string;
   starterCode: string;
   tests: TestCase[];
   projectId: string;
@@ -42,6 +47,11 @@ export function ProjectRunner({
   const [submitted, setSubmitted] = useState<SubmitResponse | null>(null);
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // stdout mode only: one captured output per required case.
+  const [outputs, setOutputs] = useState<string[]>(() => tests.map(() => ""));
+  const [noOutput, setNoOutput] = useState<boolean[]>(() => tests.map(() => false));
+
+  const isStdout = gradingMode === "stdout";
 
   function pyRepr(v: unknown): string {
     if (v === null) return "None";
@@ -98,13 +108,13 @@ export function ProjectRunner({
     setRunning(false);
   }
 
-  async function submit() {
+  async function submit(payload?: { outputs?: string[] }) {
     setSubmitting(true);
     try {
       const res = await fetch("/api/projects/submit", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectId, code, language }),
+        body: JSON.stringify({ projectId, code, language, ...payload }),
       });
       const data = (await res.json()) as SubmitResponse;
       if (data.ok) {
@@ -125,26 +135,67 @@ export function ProjectRunner({
   }
 
   const allLocalPassed = local !== null && local.length > 0 && local.every((r) => r.passed);
+  const canSubmitOutputs = outputsReady(outputs, noOutput);
 
   return (
     <section className="card p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <h2 className="font-semibold">Build it</h2>
+        <div className="flex items-center gap-3">
+          <div>
+            <h2 className="font-semibold">Build it</h2>
+            {isStdout ? (
+              <p className="text-xs text-muted mt-0.5">
+                Write a complete {languageLabel} program that reads from standard input.
+              </p>
+            ) : null}
+          </div>
+          {isStdout ? (
+            <Button size="sm" variant="ghost" onClick={() => setCode(starterCode)}>
+              Reset
+            </Button>
+          ) : null}
+        </div>
         {submitted?.passed ? <span className="text-sm font-semibold text-primary">Project complete ✓</span> : null}
       </div>
 
       <CodeEditor language={language} value={code} onChange={setCode} height="360px" ariaLabel="Project editor" />
 
-      <div className="flex flex-wrap gap-2 mt-4">
-        <Button size="sm" variant="secondary" onClick={runLocal} disabled={running}>
-          <Play className="h-3.5 w-3.5" /> {running ? "Running…" : "Run locally"}
-        </Button>
-        <Button size="sm" onClick={submit} disabled={submitting || !allLocalPassed}>
-          <Send className="h-3.5 w-3.5" /> {submitting ? "Grading…" : "Submit for grading"}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => setCode(starterCode)}>Reset</Button>
-      </div>
-      {!allLocalPassed && local ? (
+      {isStdout ? (
+        <StdoutGradingPanel
+          cases={tests.map((t) => ({ key: t.name, label: `${t.name} — required input`, input: t.stdin }))}
+          outputs={outputs}
+          noOutput={noOutput}
+          onChange={(next) => setOutputs(next)}
+          onToggleNoOutput={(i) => {
+            setNoOutput((prev) => {
+              const next = [...prev];
+              next[i] = !next[i];
+              return next;
+            });
+            setOutputs((prev) => {
+              const next = [...prev];
+              next[i] = noOutput[i] ? (next[i] ?? "") : "";
+              return next;
+            });
+          }}
+          submitting={submitting}
+          onSubmit={() => void submit({ outputs })}
+          ready={canSubmitOutputs}
+          submitLabel="Submit project for grading"
+        />
+      ) : (
+        <div className="flex flex-wrap gap-2 mt-4">
+          <Button size="sm" variant="secondary" onClick={runLocal} disabled={running}>
+            <Play className="h-3.5 w-3.5" /> {running ? "Running…" : "Run locally"}
+          </Button>
+          <Button size="sm" onClick={() => void submit()} disabled={submitting || !allLocalPassed}>
+            <Send className="h-3.5 w-3.5" /> {submitting ? "Grading…" : "Submit for grading"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setCode(starterCode)}>Reset</Button>
+        </div>
+      )}
+
+      {!isStdout && !allLocalPassed && local ? (
         <p className="text-xs text-muted mt-2">Pass all local cases before submitting for server grading.</p>
       ) : null}
 

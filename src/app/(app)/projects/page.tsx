@@ -3,7 +3,7 @@ import Link from "next/link";
 import { FolderKanban } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/services/auth";
-import { listProjects } from "@/services/projects";
+import { listProjects, projectGradingMode } from "@/services/projects";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -126,7 +126,8 @@ export default async function ProjectsPage({
                     <span className="flex items-center gap-2">
                       {p.difficulty ? <Badge tone={toneByDifficulty[p.difficulty] ?? "neutral"}>{p.difficulty}</Badge> : null}
                       <span className="text-xs text-muted">
-                        {Array.isArray(p.publicTests) ? p.publicTests.length : 0} tests
+                        {Array.isArray(p.publicTests) ? p.publicTests.length : 0}{" "}
+                        {projectGradingMode(p) === "stdout" ? "output cases" : "tests"}
                       </span>
                     </span>
                   </div>

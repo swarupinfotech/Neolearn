@@ -199,6 +199,24 @@ describe("expansion challenges and projects", () => {
       expect((p.publicTests ?? []).length, `${p.slug} has no public tests`).toBeGreaterThan(0);
     }
   });
+
+  it("projects with no runtime are specified as stdin/output cases", () => {
+    // `submitProject` grades a non-executable language from the output the
+    // learner reports, one per case. A case without stdin, or with a
+    // non-string expectation, cannot be graded or displayed.
+    const executable = new Set(["python", "javascript", "js", "typescript", "ts", "sql"]);
+    for (const p of EXPANSION.projects ?? []) {
+      if (executable.has(p.language.toLowerCase())) continue;
+      for (const t of p.publicTests ?? []) {
+        expect(typeof t.stdin, `${p.slug} case "${t.name}" has no stdin`).toBe("string");
+        expect(typeof t.expected, `${p.slug} case "${t.name}" expected output must be a string`).toBe("string");
+      }
+      expect(
+        p.starterCode.trim().length,
+        `${p.slug} has no starter code for a language the sandbox cannot run`
+      ).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe("expansion paths", () => {

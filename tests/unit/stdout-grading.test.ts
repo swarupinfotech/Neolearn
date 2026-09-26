@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { normalizeStdout, stdoutMatches, transpileTypeScript } from "@/services/sandbox";
-import { gradeOutputTest } from "@/services/challenges";
+import { gradeOutputTest, isExecutableLanguage } from "@/services/challenges";
+import { projectGradingMode } from "@/services/projects";
 
 describe("normalizeStdout", () => {
   it("normalizes CRLF and lone CR to LF", () => {
@@ -118,5 +119,34 @@ describe("gradeOutputTest", () => {
     const r = await gradeOutputTest({ expected: "7" }, []);
     expect(r.passed).toBe(false);
     expect(r.error).toMatch(/submit the output/i);
+  });
+});
+
+describe("isExecutableLanguage", () => {
+  it("covers exactly the sandbox's engines", () => {
+    for (const lang of ["python", "javascript", "js", "typescript", "ts", "sql", "TypeScript", "Python"]) {
+      expect(isExecutableLanguage(lang), `${lang} should be executable`).toBe(true);
+    }
+    for (const lang of ["c", "cpp", "java", "php", "go", "rust", "kotlin", "C++", "HTML"]) {
+      expect(isExecutableLanguage(lang), `${lang} should not be executable`).toBe(false);
+    }
+  });
+});
+
+describe("projectGradingMode", () => {
+  // Projects have no gradingMode column, so the mode is derived from the
+  // language exactly as `gradingModeFor` does for challenges. Without this a
+  // C project could never be completed: the sandbox would reject the code as
+  // an unsupported language and no amount of correct work would pass.
+  it("grades languages with no runtime from captured stdout", () => {
+    for (const lang of ["c", "C", "cpp", "java", "php", "go", "rust", "kotlin"]) {
+      expect(projectGradingMode({ language: lang }), `${lang} project`).toBe("stdout");
+    }
+  });
+
+  it("grades sandbox languages in the sandbox", () => {
+    for (const lang of ["python", "javascript", "typescript", "TypeScript", "sql"]) {
+      expect(projectGradingMode({ language: lang }), `${lang} project`).toBe("function");
+    }
   });
 });
