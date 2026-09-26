@@ -152,6 +152,11 @@ export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 export const STRICT_RATE_LIMITS = {
   login: { limit: 10, windowSec: 60 * 15 },
+  // Applied per target account in addition to the per-IP login limit, so
+  // rotating source addresses cannot be used to brute force one account.
+  // Kept tighter than the IP limit because real users mistype far less
+  // often than a script cycles addresses.
+  loginAccount: { limit: 8, windowSec: 60 * 15 },
   register: { limit: 5, windowSec: 60 * 60 },
   forgot: { limit: 5, windowSec: 60 * 60 },
   reset: { limit: 5, windowSec: 60 * 60 },

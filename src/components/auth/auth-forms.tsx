@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,27 @@ import {
   verifyEmailAction,
 } from "@/actions/auth";
 
+function formatWait(seconds: number): string {
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  const mins = Math.ceil(seconds / 60);
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"}`;
+  const hours = Math.ceil(mins / 60);
+  return `${hours} hour${hours === 1 ? "" : "s"}`;
+}
+
 export function LoginForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [lockedFor, setLockedFor] = useState(0);
   const [isPending, startTransition] = useTransition();
+
+  // Count the wait down locally so the form disables itself without
+  // another round trip. The server enforces the limit regardless.
+  useEffect(() => {
+    if (lockedFor <= 0) return;
+    const t = setTimeout(() => setLockedFor((s) => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [lockedFor]);
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -30,22 +47,37 @@ export function LoginForm() {
           router.replace("/dashboard");
         } else {
           setError(res.error ?? "Login failed.");
+          if (res.retryAfterSec) setLockedFor(res.retryAfterSec);
         }
       });
     });
   }
 
+  const locked = lockedFor > 0;
+
   return (
     <form onSubmit={submit} noValidate>
       <Field label="Email or username" htmlFor="identifier">
-        <Input id="identifier" name="identifier" autoComplete="username" required />
+        <Input id="identifier" name="identifier" autoComplete="username" required disabled={locked} />
       </Field>
       <Field label="Password" htmlFor="password">
-        <Input id="password" name="password" type="password" autoComplete="current-password" required />
+        <Input
+          id="password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          required
+          disabled={locked}
+        />
       </Field>
-      {error ? <p className="text-sm text-rose-600 mb-4" role="alert">{error}</p> : null}
-      <Button type="submit" className="w-full" disabled={isPending}>
-        {isPending ? "Signing in…" : "Log in"}
+      {error ? (
+        <p className="text-sm text-rose-600 mb-4" role="alert">
+          {error}
+          {locked ? ` Try again in ${formatWait(lockedFor)}.` : ""}
+        </p>
+      ) : null}
+      <Button type="submit" className="w-full" disabled={isPending || locked}>
+        {isPending ? "Signing in…" : locked ? `Locked (${lockedFor}s)` : "Log in"}
       </Button>
     </form>
   );

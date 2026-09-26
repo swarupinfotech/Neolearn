@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { User } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { hashPassword, verifyPassword } from "@/lib/password";
+import { fakeVerify, hashPassword, verifyPassword } from "@/lib/password";
 import {
   createSessionToken,
   destroySessionCookies,
@@ -20,7 +20,7 @@ import {
   resetInput,
 } from "@/lib/validation";
 
-type Action = { ok: boolean; error?: string; code?: string };
+type Action = { ok: boolean; error?: string; code?: string; retryAfterSec?: number };
 
 export { readSessionUserId };
 
@@ -177,15 +177,33 @@ export async function login(input: unknown, ip?: string): Promise<Action & { use
   const parsed = loginInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Enter a valid email/username and password." };
 
-  const rl = await rateLimit(actorKey("login", ip ?? (await getIp())), STRICT_RATE_LIMITS.login);
-  if (!rl.ok) return { ok: false, error: "Too many attempts. Try again later." };
-
   const { identifier, password } = parsed.data;
+  const addr = ip ?? (await getIp());
+
+  // Throttle twice: once per source address, and once per target account.
+  // The per-IP limit alone does not stop a distributed attempt that rotates
+  // addresses to hammer one account, and the per-account limit alone does
+  // not stop a spray across many accounts from one host. Both must pass.
+  const [ipLimit, accountLimit] = await Promise.all([
+    rateLimit(actorKey("login", addr), STRICT_RATE_LIMITS.login),
+    rateLimit(actorKey("login:acct", identifier.toLowerCase()), STRICT_RATE_LIMITS.loginAccount),
+  ]);
+  if (!ipLimit.ok || !accountLimit.ok) {
+    const retryAfter = Math.max(ipLimit.retryAfterSec, accountLimit.retryAfterSec);
+    return { ok: false, error: "Too many attempts. Try again later.", retryAfterSec: retryAfter };
+  }
+
   const user = await prisma.user.findFirst({
     where: { OR: [{ email: identifier.toLowerCase() }, { username: identifier }] },
   });
 
-  if (!user || !(await verifyPassword(password, user.passwordHash))) {
+  if (!user) {
+    // Spend the same time as a real comparison so the response does not
+    // reveal whether the address is registered.
+    await fakeVerify(password);
+    return { ok: false, error: "Invalid credentials." };
+  }
+  if (!(await verifyPassword(password, user.passwordHash))) {
     return { ok: false, error: "Invalid credentials." };
   }
   if (user.status === "suspended") return { ok: false, error: "This account is suspended." };

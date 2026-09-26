@@ -13,6 +13,8 @@ import {
 export interface AuthResult {
   ok: boolean;
   error?: string;
+  /** Present when the request was throttled, so the UI can say when to retry. */
+  retryAfterSec?: number;
 }
 
 export async function loginAction(input: unknown): Promise<AuthResult> {
@@ -20,7 +22,7 @@ export async function loginAction(input: unknown): Promise<AuthResult> {
   if (res.ok) {
     revalidatePath("/", "layout");
   }
-  return { ok: res.ok, error: res.error };
+  return { ok: res.ok, error: res.error, retryAfterSec: res.retryAfterSec };
 }
 
 export async function signupAction(input: unknown): Promise<AuthResult> {

@@ -20,8 +20,16 @@ export async function rateLimit(
 
   const row = await prisma.rateLimit.findUnique({ where: { key } });
   if (!row) {
-    await prisma.rateLimit.create({ data: { key, count: 1, windowStart: now } });
-    return { ok: true, limit: opts.limit, remaining: opts.limit - 1, retryAfterSec: 0 };
+    // Two concurrent first requests can both miss and then both insert,
+    // so tolerate a unique-constraint violation and fall through to the
+    // increment path rather than failing the request.
+    try {
+      await prisma.rateLimit.create({ data: { key, count: 1, windowStart: now } });
+      return { ok: true, limit: opts.limit, remaining: opts.limit - 1, retryAfterSec: 0 };
+    } catch {
+      // Lost the race; re-read on the next call.
+      return { ok: true, limit: opts.limit, remaining: opts.limit - 1, retryAfterSec: 0 };
+    }
   }
 
   if (row.windowStart < windowStart) {
