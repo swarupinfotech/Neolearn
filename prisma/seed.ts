@@ -1985,7 +1985,18 @@ async function seedPaths() {
 // ------------------------------------------------------------------
 // Demo users (documented in README)
 // ------------------------------------------------------------------
-const DEMO_PASSWORD = "DemoPass123!";
+/**
+ * Password for the seeded demo accounts.
+ *
+ * Deliberately has no committed default. A hardcoded fallback means every
+ * deployment that seeds ends up with the same well-known ADMIN credential -
+ * admin@neolearn.dev included. Supply it explicitly via SEED_DEMO_PASSWORD (or
+ * ADMIN_BOOTSTRAP_PASSWORD); the seed refuses to create an account without one.
+ *
+ * Existing accounts are never touched, so rotating a password and re-running the
+ * seed will not undo it.
+ */
+const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD ?? process.env.ADMIN_BOOTSTRAP_PASSWORD;
 
 interface DemoUserSpec {
   email: string;
@@ -2004,16 +2015,20 @@ const DEMO_USERS: DemoUserSpec[] = [
 ];
 
 async function seedUsers() {
-  const hash = bcrypt.hashSync(DEMO_PASSWORD, 10);
   for (const spec of DEMO_USERS) {
     let user = await prisma.user.findUnique({ where: { email: spec.email } });
     if (!user) {
+      if (!DEMO_PASSWORD) {
+        throw new Error(
+          `Refusing to create ${spec.email} without a password: set SEED_DEMO_PASSWORD and re-run the seed.`
+        );
+      }
       user = await prisma.user.create({
         data: {
           email: spec.email,
           username: spec.username,
           displayName: spec.displayName,
-          passwordHash: hash,
+          passwordHash: bcrypt.hashSync(DEMO_PASSWORD, 10),
           role: spec.role,
           bio: spec.bio,
           emailVerified: new Date(),
@@ -2176,7 +2191,15 @@ async function bootstrapAdmin() {
   if (!email) return;
   const existing = await prisma.user.findUnique({ where: { email } });
   if (!existing) {
-    const hash = bcrypt.hashSync(process.env.ADMIN_BOOTSTRAP_PASSWORD ?? DEMO_PASSWORD, 10);
+    // No silent fallback: an ADMIN created with a guessed password is worse
+    // than no ADMIN at all.
+    const password = process.env.ADMIN_BOOTSTRAP_PASSWORD ?? DEMO_PASSWORD;
+    if (!password) {
+      throw new Error(
+        `Refusing to bootstrap admin ${email} without a password: set ADMIN_BOOTSTRAP_PASSWORD and re-run the seed.`
+      );
+    }
+    const hash = bcrypt.hashSync(password, 10);
     await prisma.user.create({
       data: {
         email,

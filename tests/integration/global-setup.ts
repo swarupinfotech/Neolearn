@@ -20,7 +20,14 @@ export default async function globalSetup() {
 
   const root = process.cwd();
   const dbUrl = testDatabaseUrl();
-  const env = { ...process.env, DATABASE_URL: dbUrl, SEED_VERBOSE: "0" };
+  const env = {
+    ...process.env,
+    DATABASE_URL: dbUrl,
+    SEED_VERBOSE: "0",
+    // The seed refuses to create accounts without an explicit password, and the
+    // test database is disposable anyway.
+    SEED_DEMO_PASSWORD: process.env.SEED_DEMO_PASSWORD ?? "integration-test-only",
+  };
   const shell = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "/bin/sh";
 
   const run = (cmd: string) =>

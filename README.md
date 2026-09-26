@@ -38,14 +38,26 @@ npm run dev                 # http://localhost:3000
 
 ## Demo accounts
 
-All passwords are `DemoPass123!`:
-
 | Email                    | Role          | Notes                                  |
 | ------------------------ | ------------- | -------------------------------------- |
 | `admin@neolearn.dev`    | ADMIN         | Lift `ADMIN_BOOTSTRAP_EMAIL` to promote |
 | `demo@neolearn.dev`     | USER          | Main demo user (has completed onboarding) |
 | `sara@neolearn.dev`     | USER          | Secondary profile sample               |
 | `dev@neolearn.dev`      | USER          | Sample "dev dabbler"                    |
+
+There is **no default password**. Set `SEED_DEMO_PASSWORD` before seeding, otherwise
+the seed aborts rather than creating accounts with a shared credential:
+
+```bash
+SEED_DEMO_PASSWORD='<strong password>' npm run db:seed
+```
+
+The seed only creates an account when it does not already exist, so re-running it
+never resets a password you have since changed. To bootstrap an admin explicitly:
+
+```bash
+ADMIN_BOOTSTRAP_EMAIL=you@example.com ADMIN_BOOTSTRAP_PASSWORD='<strong password>' npm run db:seed
+```
 
 Demo users have completed onboarding, so login lands directly on `/dashboard`. `ADMIN_BOOTSTRAP_EMAIL` (default `admin@neolearn.dev`) promotes the first matching account to ADMIN on signup.
 
