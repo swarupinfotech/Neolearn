@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/services/auth";
 import { QuizRunner } from "@/components/quiz/quiz-runner";
 
-export const metadata: Metadata = { title: "Quiz | NeoLearn" };
+export const metadata: Metadata = { title: "Quiz | NeoLearn", robots: { index: false, follow: false } };
 
 export default async function QuizPage({ params }: { params: Promise<{ quizId: string }> }) {
   const { quizId } = await params;
-  const user = await requireUser();
+  // Quizzes are gated behind an account, so the session is required.
+  await requireUser();
 
   const quiz = await prisma.quiz.findUnique({
     where: { id: quizId },
@@ -17,7 +18,8 @@ export default async function QuizPage({ params }: { params: Promise<{ quizId: s
       course: { select: { slug: true, title: true } },
     },
   });
-  if (!quiz) notFound();
+  // An unpublished quiz is indistinguishable from a missing one.
+  if (!quiz || quiz.status !== "PUBLISHED") notFound();
 
   // Never expose answers/keys to the client — grading is server-side.
   const questions = quiz.questions.map((q) => ({
@@ -29,8 +31,6 @@ export default async function QuizPage({ params }: { params: Promise<{ quizId: s
     order: q.order,
     points: q.points,
   }));
-
-  void user;
 
   return (
     <div className="max-w-3xl mx-auto">

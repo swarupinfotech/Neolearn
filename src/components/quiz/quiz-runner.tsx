@@ -46,6 +46,14 @@ interface SubmitResult {
 
 type Answers = Record<string, string | string[]>;
 
+/** Short label shown next to a question so the learner knows what to do. */
+const QUESTION_KIND: Record<string, string> = {
+  MULTI_SELECT: "Select all that apply",
+  DEBUGGING: "Find the bug",
+  SCENARIO: "Security scenario",
+  OUTPUT: "What does it print?",
+};
+
 export function QuizRunner({ quiz, questions }: { quiz: RunnerQuiz; questions: ClientQuestion[] }) {
   const [answers, setAnswers] = useState<Answers>({});
   const [submitted, setSubmitted] = useState<SubmitResult | null>(null);
@@ -53,6 +61,9 @@ export function QuizRunner({ quiz, questions }: { quiz: RunnerQuiz; questions: C
   const startTime = useMemo(() => new Date().toISOString(), []);
 
   function setAnswer(qid: string, value: string) {
+    setAnswers((prev) => ({ ...prev, [qid]: value }));
+  }
+  function setMulti(qid: string, value: string[]) {
     setAnswers((prev) => ({ ...prev, [qid]: value }));
   }
   function setMatch(qid: string, picks: string[]) {
@@ -67,12 +78,25 @@ export function QuizRunner({ quiz, questions }: { quiz: RunnerQuiz; questions: C
   async function submit() {
     setIsPending(true);
     try {
+      // MATCH is edited as one dropdown pick per left-hand item, so the UI
+      // state is a bare list of rights. The grader compares [left, right]
+      // pairs, so the pairs are reconstructed here from the question's
+      // interleaved options.
+      const payload: Record<string, unknown> = { ...answers };
+      for (const q of questions) {
+        if (q.type !== "MATCH") continue;
+        const opts = stringList(q.options);
+        const lefts = opts.filter((_, i) => i % 2 === 0);
+        const picks = (answers[q.id] as string[] | undefined) ?? [];
+        payload[q.id] = lefts.map((left, i) => [left, picks[i] ?? ""]);
+      }
+
       const res = await fetch("/api/quiz/submit", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           quizId: quiz.id,
-          answers,
+          answers: payload,
           startedAt: startTime,
         }),
       });
@@ -119,6 +143,9 @@ export function QuizRunner({ quiz, questions }: { quiz: RunnerQuiz; questions: C
             <div className="flex items-center gap-2 mb-3">
               <Badge tone="neutral">Q{qi + 1}</Badge>
               <span className="text-xs text-muted">{q.points} pts</span>
+              {QUESTION_KIND[q.type] ? (
+                <Badge tone="blue">{QUESTION_KIND[q.type]}</Badge>
+              ) : null}
             </div>
             <p className="font-medium">{q.prompt}</p>
             {q.code ? (
@@ -129,9 +156,11 @@ export function QuizRunner({ quiz, questions }: { quiz: RunnerQuiz; questions: C
               <QuestionInput
                 q={q}
                 value={answers[q.id]}
-                onChange={(v) =>
-                  q.type === "MATCH" ? setMatch(q.id, v as unknown as string[]) : setAnswer(q.id, v as string)
-                }
+                onChange={(v) => {
+                  if (q.type === "MATCH") setMatch(q.id, v as unknown as string[]);
+                  else if (q.type === "MULTI_SELECT") setMulti(q.id, v as unknown as string[]);
+                  else setAnswer(q.id, v as string);
+                }}
               />
             </div>
           </section>
@@ -157,12 +186,23 @@ function QuestionInput({
   onChange: (v: string | string[]) => void;
 }) {
   switch (q.type) {
-    case "MCQ":
-      return <ChoiceList options={stringList(q.options)} selected={value as string} onSelect={onChange} />;
     case "TRUE_FALSE":
       return <ChoiceList options={["true", "false"]} selected={value as string} onSelect={onChange} />;
+    case "MCQ":
     case "CORRECT":
+    // Judgement questions render as a single-choice list; only the
+    // surrounding copy and the server-side grading key differ.
+    case "DEBUGGING":
+    case "SCENARIO":
       return <ChoiceList options={stringList(q.options)} selected={value as string} onSelect={onChange} />;
+    case "MULTI_SELECT":
+      return (
+        <MultiSelectList
+          options={stringList(q.options)}
+          selected={(value as string[]) ?? []}
+          onSelect={onChange}
+        />
+      );
     case "FILL":
     case "OUTPUT":
       return (
@@ -234,6 +274,60 @@ function ChoiceList({
           >
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-[10px] font-bold">
               {String.fromCharCode(65 + i)}
+            </span>
+            <span className="flex-1">{opt}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MultiSelectList({
+  options,
+  selected,
+  onSelect,
+}: {
+  options: string[];
+  selected: string[];
+  onSelect: (v: string[]) => void;
+}) {
+  const chosen = new Set(selected);
+  return (
+    <div className="grid gap-2">
+      <p className="text-xs text-muted">Select every option that applies.</p>
+      {options.map((opt, i) => {
+        const key = String(i);
+        const isSel = chosen.has(key) || chosen.has(opt);
+        return (
+          <button
+            key={key}
+            type="button"
+            role="checkbox"
+            aria-checked={isSel}
+            onClick={() => {
+              const next = [...chosen];
+              if (isSel) {
+                const at = next.indexOf(chosen.has(key) ? key : opt);
+                if (at >= 0) next.splice(at, 1);
+              } else {
+                next.push(key);
+              }
+              onSelect(next);
+            }}
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-left text-sm transition-colors",
+              isSel ? "border-primary ring-2 ring-primary/40 bg-primary-soft" : "hover:border-primary/50"
+            )}
+          >
+            <span
+              className={cn(
+                "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px] font-bold",
+                isSel ? "border-primary bg-primary text-white dark:text-[#052e16]" : "border-border"
+              )}
+              aria-hidden="true"
+            >
+              {isSel ? "✓" : ""}
             </span>
             <span className="flex-1">{opt}</span>
           </button>
@@ -339,9 +433,20 @@ function ResultScreen({
                   {q.code ? (
                     <pre className="mt-2 rounded-lg bg-[#0d1117] text-green-300 p-3 text-xs overflow-x-auto">{q.code}</pre>
                   ) : null}
-                  {q.type === "MCQ" || q.type === "CORRECT" ? (
+                  {q.type === "MCQ" || q.type === "CORRECT" || q.type === "DEBUGGING" || q.type === "SCENARIO" ? (
                     <p className="mt-2 text-sm text-muted">
                       Your answer: <span className="text-fg font-medium">{answerText(q, stringList(q.options), answers[q.id])}</span>
+                    </p>
+                  ) : null}
+                  {q.type === "MULTI_SELECT" ? (
+                    <p className="mt-2 text-sm text-muted">
+                      Your answer:{" "}
+                      <span className="text-fg font-medium">
+                        {((answers[q.id] as string[]) ?? [])
+                          .map((idx) => stringList(q.options)[Number(idx)] ?? idx)
+                          .filter(Boolean)
+                          .join(", ") || "—"}
+                      </span>
                     </p>
                   ) : null}
                   {q.type === "TRUE_FALSE" ? (

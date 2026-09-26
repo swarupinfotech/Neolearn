@@ -83,6 +83,9 @@ export const challengeSubmitInput = z.object({
   challengeId: z.string().min(1),
   code: z.string().min(1).max(SAFETY.MAX_CODE_LENGTH),
   language: z.string().min(1).max(40),
+  // Output-based grading (languages with no in-browser runtime): one captured
+  // stdout per hidden test, in hidden-test order.
+  outputs: z.array(z.string().max(SAFETY.MAX_CODE_LENGTH)).max(20).optional(),
 });
 
 // ------------------------------------------------------------------

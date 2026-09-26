@@ -3,7 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  serverExternalPackages: ["quickjs-emscripten"],
+  // `typescript` is a large CommonJS compiler used only for server-side type
+  // erasure. Keeping it external avoids bundling it into the server output.
+  serverExternalPackages: ["quickjs-emscripten", "typescript"],
   // The repo lives inside a parent folder that also holds other projects.
   // Without this, Next.js walks up and warns that it ignored the outer
   // package-lock.json. Pin the root to this project directory.

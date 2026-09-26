@@ -17,6 +17,11 @@ import type { PyodideInterface } from "pyodide";
 import type { QuickJSWASMModule } from "quickjs-emscripten";
 import type { SqlJsStatic } from "sql.js";
 
+// `typescript` is a runtime dependency (not just a devDependency) because
+// challenge grading needs it. It is listed in `serverExternalPackages` so
+// Next does not bundle the compiler; this import stays a real Node require.
+import * as ts from "typescript";
+
 let pyodidePromise: Promise<PyodideInterface> | null = null;
 
 async function getPyodide() {
@@ -114,6 +119,39 @@ __neolearn_result
     } catch {
       /* ignore */
     }
+  }
+}
+
+// ------------------------------------------------------------------
+// TypeScript -> JavaScript
+//
+// QuickJS only understands plain JavaScript, so a real TypeScript
+// challenge (with type annotations, interfaces, generics, enums and
+// `as` casts) would fail to parse. We therefore erase the type layer
+// with the TypeScript compiler before handing the source to the JS
+// engine. Compilation happens on the server only; the browser client
+// erases types separately so local runs work too.
+// ------------------------------------------------------------------
+export function transpileTypeScript(source: string): { code: string; error: string | null } {
+  try {
+    const out = ts.transpileModule(source, {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2020,
+        module: ts.ModuleKind.None,
+        removeComments: false,
+        isolatedModules: true,
+      },
+    });
+    const diagnostics = out.diagnostics ?? [];
+    const fatal = diagnostics.filter((d) => d.category === ts.DiagnosticCategory.Error);
+    if (fatal.length > 0) {
+      const first = fatal[0];
+      const message = ts.flattenDiagnosticMessageText(first.messageText, " ");
+      return { code: "", error: `TypeScript error: ${message}`.slice(0, 300) };
+    }
+    return { code: out.outputText, error: null };
+  } catch (e) {
+    return { code: "", error: e instanceof Error ? e.message.slice(0, 300) : "TypeScript compile failed" };
   }
 }
 
@@ -274,6 +312,36 @@ export async function runSql(query: string, timeoutMs = 5000): Promise<SqlResult
       /* ignore */
     }
   }
+}
+
+// ------------------------------------------------------------------
+// Output-based grading (languages with no in-browser runtime)
+// ------------------------------------------------------------------
+
+/**
+ * Normalize a program's stdout so trivial formatting differences do not
+ * fail an otherwise correct answer.
+ *
+ * Applied to BOTH sides of the comparison, so the hidden expectation
+ * stored in the database is never echoed back to the learner: only the
+ * pass/fail verdict of each hidden test leaves the server.
+ *
+ * Rules: CRLF -> LF, trailing whitespace stripped per line, trailing
+ * blank lines removed, and a single trailing newline tolerated.
+ */
+export function normalizeStdout(raw: string): string {
+  return raw
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/, ""))
+    .join("\n")
+    .replace(/\n+$/, "");
+}
+
+/** Compare a learner's program output against a hidden expected output. */
+export function stdoutMatches(actual: string, expected: string): boolean {
+  return normalizeStdout(actual) === normalizeStdout(expected);
 }
 
 // ------------------------------------------------------------------

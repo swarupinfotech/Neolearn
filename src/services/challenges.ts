@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { rateLimit, actorKey } from "@/lib/rate-limit";
 import { STRICT_RATE_LIMITS, SAFETY } from "@/lib/constants";
 import { challengeSubmitInput } from "@/lib/validation";
-import { pythonFn, runJavaScript, runSql, gradedEqual } from "@/services/sandbox";
+import { pythonFn, runJavaScript, runSql, gradedEqual, transpileTypeScript, stdoutMatches } from "@/services/sandbox";
 import { awardXp } from "@/services/xp";
 import { recordDailyTask } from "@/services/daily";
 import { recordActivity } from "@/services/streak";
@@ -15,7 +15,35 @@ export interface GradedTest {
   error?: string | null;
 }
 
-/** Run ONE test case through the appropriate WASM sandbox. */
+/** Languages the browser WASM engines can execute. */
+const EXECUTABLE_LANGUAGES = new Set([
+  "python",
+  "javascript",
+  "js",
+  "typescript",
+  "ts",
+  "sql",
+]);
+
+/** Normalize the many language spellings used across course content. */
+export function normalizeLanguage(language: string): string {
+  const l = language.trim().toLowerCase();
+  if (l === "js") return "javascript";
+  if (l === "ts") return "typescript";
+  return l;
+}
+
+export function isExecutableLanguage(language: string): boolean {
+  return EXECUTABLE_LANGUAGES.has(normalizeLanguage(language));
+}
+
+/**
+ * Run ONE test case through the appropriate WASM sandbox.
+ *
+ * Only used for `gradingMode: "function"` challenges — i.e. languages the
+ * platform can actually execute. Languages without a runtime (C, C++, Java,
+ * PHP, Go) are graded by `gradeOutputTest` instead.
+ */
 export async function gradeTest(
   language: string,
   code: string,
@@ -23,18 +51,26 @@ export async function gradeTest(
   test: { input?: unknown; setup?: string; expected: unknown },
   timeoutMs: number
 ): Promise<{ passed: boolean; error?: string }> {
+  const lang = normalizeLanguage(language);
   try {
-    if (language === "python" || language === "Python") {
+    if (lang === "python") {
       const res = await pythonFn(code, functionName, (test.input ?? []) as unknown[], timeoutMs);
       if (res.error) return { passed: false, error: res.error };
       return { passed: gradedEqual(res.value, test.expected) };
     }
-    if (language === "javascript" || language === "JavaScript" || language === "js" || language === "typescript") {
-      const res = await runJavaScript(code, functionName, (test.input ?? []) as unknown[], timeoutMs);
+    if (lang === "javascript" || lang === "typescript") {
+      // Real TypeScript sources are type-erased before execution.
+      let source = code;
+      if (lang === "typescript") {
+        const compiled = transpileTypeScript(code);
+        if (compiled.error) return { passed: false, error: compiled.error };
+        source = compiled.code;
+      }
+      const res = await runJavaScript(source, functionName, (test.input ?? []) as unknown[], timeoutMs);
       if (res.error) return { passed: false, error: res.error };
       return { passed: gradedEqual(res.value, test.expected) };
     }
-    if (language === "sql" || language === "SQL") {
+    if (lang === "sql") {
       const setup = test.setup ? `${test.setup}\n` : "";
       const res = await runSql(`${setup}${code}`, timeoutMs);
       if (res.error) return { passed: false, error: res.error };
@@ -45,6 +81,33 @@ export async function gradeTest(
   } catch (e) {
     return { passed: false, error: e instanceof Error ? e.message.slice(0, 300) : "Sandbox error" };
   }
+}
+
+/**
+ * Output-based grading for languages with no in-browser runtime.
+ *
+ * The learner compiles and runs the program in their own environment, then
+ * submits the captured stdout. We compare it against the hidden expected
+ * output here on the server. The expected value is never returned to the
+ * client, and a failing test reports only its name.
+ *
+ * Trade-off (documented in the product copy): this validates the program's
+ * output, not the program itself.
+ */
+export async function gradeOutputTest(
+  test: { expected: unknown },
+  outputs: string[]
+): Promise<{ passed: boolean; error?: string }> {
+  const expected = typeof test.expected === "string" ? test.expected : String(test.expected ?? "");
+  if (outputs.length === 0) {
+    return { passed: false, error: "Submit the output your program prints for each test input." };
+  }
+  for (const actual of outputs) {
+    if (!stdoutMatches(actual, expected)) {
+      return { passed: false, error: "Output does not match the expected result." };
+    }
+  }
+  return { passed: true };
 }
 
 function expectedAsRows(expected: unknown): unknown[][] {
@@ -84,6 +147,7 @@ export interface ChallengeSubmissionResult {
   passed: boolean;
   results: GradedTest[];
   rewardedXp: number;
+  gradingMode: GradingMode;
   attempt: {
     id: string;
     publicPassed: boolean;
@@ -92,6 +156,16 @@ export interface ChallengeSubmissionResult {
     executionMs: number;
     createdAt: Date;
   };
+}
+
+export type GradingMode = "function" | "stdout";
+
+export function gradingModeFor(challenge: { gradingMode: string; language: string }): GradingMode {
+  if (challenge.gradingMode === "stdout") return "stdout";
+  if (challenge.gradingMode === "function") return "function";
+  // Defensive default: a language we cannot execute is never sent to the
+  // sandbox, because that would always fail with an unsupported-language error.
+  return isExecutableLanguage(challenge.language) ? "function" : "stdout";
 }
 
 export async function submitChallenge(
@@ -113,16 +187,41 @@ export async function submitChallenge(
 
   const code = parsed.data.code.slice(0, SAFETY.MAX_CODE_LENGTH);
   const lang = parsed.data.language;
+  const mode = gradingModeFor(challenge);
 
-  const hiddenTests = (challenge.hiddenTests as unknown as { name: string; input?: unknown; setup?: string; expected: unknown }[]) ?? [];
+  const hiddenTests = (challenge.hiddenTests as unknown as {
+    name: string;
+    input?: unknown;
+    setup?: string;
+    stdin?: string;
+    expected: unknown;
+  }[]) ?? [];
 
   const graded: GradedTest[] = [];
   const started = Date.now();
-  for (const t of hiddenTests) {
-    const r = await gradeTest(lang, code, challenge.functionName, t, challenge.timeoutMs);
-    graded.push({ name: t.name, passed: r.passed, error: r.error ?? null });
-    if (!r.passed) break; // fail-fast; don't leak more hidden expectations than needed
+
+  if (mode === "stdout") {
+    // The learner supplies one captured output per hidden test input.
+    const submitted = (parsed.data.outputs ?? []) as string[];
+    if (submitted.length !== hiddenTests.length) {
+      return {
+        ok: false,
+        error: `This challenge has ${hiddenTests.length} hidden test${hiddenTests.length === 1 ? "" : "s"}. Submit the output your program prints for each of them.`,
+      };
+    }
+    for (const [i, t] of hiddenTests.entries()) {
+      const r = await gradeOutputTest(t, [submitted[i]]);
+      graded.push({ name: t.name, passed: r.passed, error: r.error ?? null });
+      if (!r.passed) break;
+    }
+  } else {
+    for (const t of hiddenTests) {
+      const r = await gradeTest(lang, code, challenge.functionName, t, challenge.timeoutMs);
+      graded.push({ name: t.name, passed: r.passed, error: r.error ?? null });
+      if (!r.passed) break; // fail-fast; don't leak more hidden expectations than needed
+    }
   }
+
   const executionMs = Date.now() - started;
   const hiddenPassed = graded.length === hiddenTests.length && hiddenTests.length > 0
     ? graded.every((g) => g.passed)
@@ -178,6 +277,7 @@ export async function submitChallenge(
     passed: hiddenPassed,
     results: safeResults,
     rewardedXp: hiddenPassed && !prevRewarded ? rewardedXp : 0,
+    gradingMode: mode,
     attempt: {
       id: attempt.id,
       publicPassed: attempt.publicPassed,

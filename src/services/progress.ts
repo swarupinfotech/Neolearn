@@ -39,6 +39,9 @@ export async function completeLesson(
   if (!lesson) return { ok: false, error: "Lesson not found." };
   const courseId = lesson.module.courseId;
   const course = lesson.module.course;
+  // A draft course must not be completable, or its lessons would pay XP and
+  // inflate course progress for content no learner is meant to see.
+  if (course.status !== "PUBLISHED") return { ok: false, error: "Lesson not found." };
 
   const pct = Math.max(0, Math.min(100, parsed.data.progressPct));
   const completed = parsed.data.completed;
@@ -74,6 +77,13 @@ export async function completeLesson(
     void track("lesson_complete", { lessonId }, userId);
   }
 
+  // Re-completing a lesson the learner had already finished is a review, and
+  // reviews count toward the daily mission. It never awards extra XP because
+  // awardXp is keyed on (userId, type, sourceId).
+  if (!lessonRewarded && progress.status === "completed") {
+    await recordDailyTask(userId, "review", true);
+  }
+
   // Course progress accounting (idempotent).
   const totalLessons = await prisma.lesson.count({
     where: { module: { courseId } },
@@ -103,16 +113,17 @@ export async function completeLesson(
   });
 
   const courseCompleted = cp.completed;
+  const courseXp = course.xpReward > 0 ? course.xpReward : 100;
   let courseRewarded = false;
   if (courseCompleted) {
-    const cres = await awardXp(userId, "course", courseId, 100, { course: course.title });
+    const cres = await awardXp(userId, "course", courseId, courseXp, { course: course.title });
     courseRewarded = cres.granted;
     if (cres.granted) {
       await notify({
         userId,
         type: "course_completion",
         title: `Course completed: ${course.title}`,
-        body: "+100 XP",
+        body: `+${courseXp} XP`,
         link: `/courses/${course.slug}`,
       });
       await checkAchievements(userId);
@@ -128,7 +139,7 @@ export async function completeLesson(
     courseCompleted,
     courseRewarded,
     courseId,
-    xp: xpEarned + (courseRewarded ? 100 : 0),
+    xp: xpEarned + (courseRewarded ? courseXp : 0),
   };
 }
 
@@ -189,6 +200,8 @@ export async function updatePathProgress(userId: string, pathId: string) {
 
   if (completed && !prev?.completed) {
     await issueCertificate(userId, path);
+    // A finished path can satisfy path-based achievements.
+    await checkAchievements(userId);
   }
   return { progress, completed };
 }

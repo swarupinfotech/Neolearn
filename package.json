@@ -46,6 +46,7 @@
     "sonner": "^2.0.8",
     "sql.js": "^1.14.2",
     "tailwind-merge": "^2.6.0",
+    "typescript": "^5.7.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -64,7 +65,6 @@
     "pyodide": "^0.27.5",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
-    "typescript": "^5.7.3",
     "vitest": "^3.1.4"
   },
   "allowScripts": {

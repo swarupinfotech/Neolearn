@@ -11,6 +11,8 @@
 //   - Output caps prevent output floods.
 // ============================================================
 
+import { eraseTypes } from "@/lib/client-transpile";
+
 export interface ExecResult {
   ok: boolean;
   output: string;
@@ -180,8 +182,11 @@ export async function runClientCode(
     case "python":
       return runPython(code, timeoutMs);
     case "javascript":
-    case "typescript":
       return runJavaScript(code, timeoutMs);
+    case "typescript":
+    case "ts":
+      // The sandbox runs plain JavaScript, so types are erased first.
+      return runJavaScript(await eraseTypes(code), timeoutMs);
     case "sql":
       return runSql(code, timeoutMs);
     case "html":

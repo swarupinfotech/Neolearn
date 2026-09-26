@@ -13,9 +13,9 @@ export default async function PracticePage() {
   const user = await requireUser();
 
   const quizzes = await prisma.quiz.findMany({
-    where: { type: "PRACTICE" },
+    where: { type: "PRACTICE", status: "PUBLISHED" },
     include: { _count: { select: { questions: true } } },
-    orderBy: { title: "asc" },
+    orderBy: [{ order: "asc" }, { title: "asc" }],
     take: 30,
   });
 

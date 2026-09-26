@@ -22,8 +22,29 @@ export const COURSE_CATEGORIES = [
   "Web Development",
   "Database",
   "Cybersecurity",
-  "DevOps",
+  "DevOps & Cloud",
+  "Data & AI",
 ] as const;
+
+/**
+ * Backwards-compatible short labels. Older courses were seeded with
+ * "DevOps" as their category, so the discovery filters accept both.
+ */
+export const COURSE_CATEGORY_ALIASES: Record<string, string> = {
+  DevOps: "DevOps & Cloud",
+};
+
+export const COURSE_DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"] as const;
+
+export const COURSE_SORTS = [
+  { value: "popular", label: "Most popular" },
+  { value: "newest", label: "Newest" },
+  { value: "beginner", label: "Beginner friendly" },
+  { value: "xp", label: "Highest XP" },
+  { value: "rating", label: "Top rated" },
+] as const;
+
+export type CourseSort = (typeof COURSE_SORTS)[number]["value"];
 
 export const LANGUAGES = [
   "Python",
@@ -45,6 +66,7 @@ export const LANGUAGES = [
 
 export const CHALLENGE_CATEGORIES = [
   "Algorithms",
+  "Data Structures",
   "Arrays",
   "Strings",
   "Loops",
@@ -53,8 +75,25 @@ export const CHALLENGE_CATEGORIES = [
   "Debugging",
   "SQL",
   "Web",
+  "React",
   "Security",
+  "Secure Coding",
 ] as const;
+
+export const CHALLENGE_LANGUAGES = [
+  "python",
+  "javascript",
+  "typescript",
+  "sql",
+  "html",
+  "c",
+  "cpp",
+  "java",
+  "php",
+  "go",
+] as const;
+
+export const CHALLENGE_DIFFICULTIES = ["Easy", "Medium", "Hard"] as const;
 
 export const LEVEL_CAP = 100;
 export const DEFAULT_MAX_LEVEL = 100;
@@ -73,6 +112,22 @@ export const ONBOARDING_TOPICS = [
 ] as const;
 
 export const EXPERIENCE_LEVELS = ["Beginner", "Intermediate", "Advanced"] as const;
+
+/**
+ * Question types the grader understands. Rendered by
+ * components/quiz/quiz-runner.tsx and graded server-side in
+ * services/quiz.ts.
+ */
+export const QUESTION_TYPES = [
+  "MCQ", // single answer
+  "MULTI_SELECT", // several correct options
+  "TRUE_FALSE",
+  "OUTPUT", // what does this code print
+  "DEBUGGING", // find the bug / pick the fix
+  "SCENARIO", // security / real-world judgement call
+  "FILL",
+  "MATCH",
+] as const;
 
 export const GOALS = [
   "Career",

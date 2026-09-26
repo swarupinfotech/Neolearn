@@ -122,15 +122,21 @@ model Course {
   slug          String        @unique
   title         String
   description   String
-  category      String // Programming | Web Development | Database | Cybersecurity | DevOps
+  longDescription String?
+  objectives    Json?         // string[] — learning objectives
+  category      String // Programming | Web Development | Database | Cybersecurity | DevOps & Cloud | Data & AI
   language      String // Python | JavaScript | HTML | CSS | SQL ...
+  technology    String?       // primary technology, used by the discovery filters
+  tags          Json?         // string[] — extra technologies
   difficulty    String        @default("Beginner") // Beginner | Intermediate | Advanced
   rating        Float         @default(0)
   ratingCount   Int           @default(0)
   students      Int           @default(0)
   duration      Int           @default(0) // minutes
+  xpReward      Int           @default(100)
   icon          String        @default("Code")
   color         String        @default("#22c55e")
+  order         Int           @default(0)
   status        ContentStatus @default(DRAFT)
   isPremium     Boolean       @default(false)
   createdAt     DateTime      @default(now())
@@ -143,6 +149,8 @@ model Course {
 
   @@index([category])
   @@index([status])
+  @@index([technology])
+  @@index([difficulty])
 }
 
 model CourseModule {
@@ -223,24 +231,31 @@ model Quiz {
   id          String     @id @default(cuid())
   slug        String?    @unique
   title       String
+  description String?
   type        QuizType   @default(PRACTICE)
   courseId    String?
   lessonId    String?
   timerMinutes Int?      // null = no timer
   passingScore Int       @default(70)
   xpReward    Int        @default(20)
+  order       Int        @default(0)
+  // Defaults to PUBLISHED so the pre-existing seeded quizzes stay visible;
+  // the admin CMS always sets this explicitly.
+  status      ContentStatus @default(PUBLISHED)
   course      Course?    @relation(fields: [courseId], references: [id], onDelete: Cascade)
   questions   Question[]
   attempts    QuizAttempt[]
 
   @@index([courseId])
+  @@index([status, order])
 }
 
 model Question {
   id             String    @id @default(cuid())
   quizId         String?   // null when standalone
   challengeId    String?   // optional link to challenge for hints
-  type           String    // MCQ | TRUE_FALSE | FILL | OUTPUT | MATCH | CORRECT
+  // MCQ | MULTI_SELECT | TRUE_FALSE | OUTPUT | DEBUGGING | SCENARIO | FILL | MATCH | CORRECT
+  type           String
   prompt         String
   code           String?
   options        Json?     // array of strings (for MCQ / MATCH pairs)
@@ -261,6 +276,7 @@ model QuizAttempt {
   answers      Json
   score        Int
   maxScore     Int
+  correctCount Int      @default(0)
   passed       Boolean
   passRewarded Boolean  @default(false)
   startedAt    DateTime @default(now())
@@ -284,8 +300,10 @@ model Challenge {
   category       String // Algorithms | Arrays | Strings | Loops | Functions | OOP | Debugging | SQL | Web | Security
   difficulty     String         @default("Easy")
   language       String         @default("python")
-  starterCode    String         @default("")
+  gradingMode    String         @default("function") // function | stdout
+  inputFormat    String?        // stdin description (stdout mode)
   functionName   String         @default("solution")
+  starterCode    String         @default("")
   publicTests    Json // [{name, input, expected}] (shown to user as examples)
   hiddenTests    Json // [{name, input, expected}] (never exposed)
   timeoutMs      Int            @default(4000)
@@ -296,6 +314,8 @@ model Challenge {
   projectsJson   Json?
 
   @@index([category, status])
+  @@index([language])
+  @@index([gradingMode])
 }
 
 model ChallengeAttempt {
@@ -327,7 +347,12 @@ model Project {
   title        String
   description  String
   language     String         @default("python")
+  difficulty   String         @default("Beginner")
+  objectives   Json?          // string[]
+  technologies Json?          // string[]
   requirements Json
+  tasks        Json?          // [{title, detail}] step-by-step build order
+  criteria     Json?          // string[] completion criteria
   starterCode  String         @default("")
   publicTests  Json // [{name, input, expected}]
   xpReward     Int            @default(40)
@@ -335,6 +360,9 @@ model Project {
   order        Int            @default(0)
   createdAt    DateTime       @default(now())
   submissions  ProjectSubmission[]
+
+  @@index([status])
+  @@index([difficulty])
 }
 
 model ProjectSubmission {
@@ -561,14 +589,21 @@ model LearningPath {
   slug        String   @unique
   title       String
   description String
+  longDescription String?
   icon        String   @default("Milestone")
   color       String   @default("#22c55e")
+  level       String   @default("Beginner")
+  xpReward    Int      @default(0)
+  prerequisitePathIds Json? // string[] — slugs, ordered
   courseIds   Json
   projectIds  Json
   challengeIds Json
   finalQuizId String?
+  order       Int      @default(0)
   progress    UserPathProgress[]
   certificates Certificate[]
+
+  @@index([level])
 }
 
 model UserPathProgress {

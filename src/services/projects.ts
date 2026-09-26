@@ -4,6 +4,7 @@ import { STRICT_RATE_LIMITS, SAFETY } from "@/lib/constants";
 import { projectSubmitInput } from "@/lib/validation";
 import { gradeTest } from "@/services/challenges";
 import { awardXp } from "@/services/xp";
+import { recordDailyTask } from "@/services/daily";
 import { recordActivity } from "@/services/streak";
 import { checkAchievements } from "@/services/achievements";
 import { notify } from "@/services/notifications";
@@ -61,6 +62,7 @@ export async function submitProject(
   if (passed) {
     rewardedXp = prevRewarded ? 0 : project.xpReward;
     await recordActivity(userId);
+    await recordDailyTask(userId, "project", true);
     if (!prevRewarded) {
       await awardXp(userId, "project", project.id, project.xpReward, { slug: project.slug });
       await checkAchievements(userId);

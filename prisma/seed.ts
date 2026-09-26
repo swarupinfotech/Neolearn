@@ -6,6 +6,8 @@
 import "dotenv/config";
 import { PrismaClient, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { seedContent } from "./content/pipeline";
+import { EXPANSION } from "./content";
 
 const prisma = new PrismaClient();
 const isVerbose = process.env.SEED_VERBOSE === "1";
@@ -2245,6 +2247,16 @@ async function main() {
 
   log("seeding learning paths…");
   await seedPaths();
+
+  // ------------------------------------------------------------
+  // Expansion bundle (courses, paths, challenges, projects,
+  // achievements and rotating daily missions added on top of the
+  // original catalog). Pushed through the shared idempotent pipeline
+  // in prisma/content/pipeline.ts.
+  // ------------------------------------------------------------
+  log("seeding expansion content…");
+  const report = await seedContent(prisma, EXPANSION);
+  log("expansion:", report);
 
   log("seeding users…");
   await seedUsers();

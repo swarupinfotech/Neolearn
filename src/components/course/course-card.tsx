@@ -17,6 +17,8 @@ export interface CourseCardData {
   icon: string;
   color: string;
   progressPct?: number;
+  xpReward?: number;
+  tags?: string[];
 }
 
 const toneByCategory: Record<string, "green" | "blue" | "amber" | "rose" | "violet" | "neutral"> = {
@@ -25,6 +27,8 @@ const toneByCategory: Record<string, "green" | "blue" | "amber" | "rose" | "viol
   Database: "violet",
   Cybersecurity: "rose",
   DevOps: "amber",
+  "DevOps & Cloud": "amber",
+  "Data & AI": "violet",
 };
 
 export function CourseCard({ course }: { course: CourseCardData }) {
@@ -47,6 +51,10 @@ export function CourseCard({ course }: { course: CourseCardData }) {
 
       <h3 className="font-semibold mt-3 group-hover:text-primary transition-colors">{course.title}</h3>
       <p className="text-sm text-muted mt-1 line-clamp-2 flex-1">{course.description}</p>
+
+      {course.tags && course.tags.length > 0 ? (
+        <p className="text-[11px] text-muted mt-2 line-clamp-1">{course.tags.slice(0, 4).join(" · ")}</p>
+      ) : null}
 
       <div className="flex items-center gap-3 mt-3 text-xs text-muted">
         <span className="flex items-center gap-1">

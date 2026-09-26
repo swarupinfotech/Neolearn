@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 interface TestCase {
   name: string;
   input?: unknown;
+  stdin?: string;
   expected: unknown;
 }
 
@@ -24,18 +25,25 @@ interface SubmitResponse {
 }
 
 export function ChallengeRunner({
+  gradingMode,
   language,
+  languageLabel,
   functionName,
   starterCode,
   publicTests,
+  hiddenInputs,
   challengeId,
   slug,
   xpReward,
 }: {
+  gradingMode: "function" | "stdout";
   language: string;
+  languageLabel: string;
   functionName: string;
   starterCode: string;
   publicTests: TestCase[];
+  /** stdin for each hidden test. Expected outputs are never sent here. */
+  hiddenInputs: string[];
   challengeId: string;
   slug: string;
   xpReward: number;
@@ -46,6 +54,11 @@ export function ChallengeRunner({
   const [submitted, setSubmitted] = useState<SubmitResponse | null>(null);
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // One output box per hidden test input.
+  const [outputs, setOutputs] = useState<string[]>(() => hiddenInputs.map(() => ""));
+  const [noOutput, setNoOutput] = useState<boolean[]>(() => hiddenInputs.map(() => false));
+
+  const isStdout = gradingMode === "stdout";
 
   function pyRepr(v: unknown): string {
     if (v === null) return "None";
@@ -105,19 +118,21 @@ export function ChallengeRunner({
     }
   }
 
-  async function submitForHidden() {
+  async function submitForHidden(payload?: { outputs?: string[] }) {
     setSubmitting(true);
     try {
       const res = await fetch("/api/challenges/submit", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ challengeId, code, language }),
+        body: JSON.stringify({ challengeId, code, language, ...payload }),
       });
       const data = (await res.json()) as SubmitResponse;
       if (data.ok) {
         setSubmitted(data);
         if (data.passed) {
-          toast.success(data.rewardedXp ? `Challenge solved! +${data.rewardedXp} XP` : "Challenge solved! (XP already earned)");
+          toast.success(
+            data.rewardedXp ? `Challenge solved! +${data.rewardedXp} XP` : "Challenge solved! (XP already earned)"
+          );
         } else {
           toast.error("Hidden tests failed. Review the failing tests.");
         }
@@ -132,6 +147,10 @@ export function ChallengeRunner({
   }
 
   const allPublicPassed = localResults !== null && localResults.length > 0 && localResults.every((r) => r.passed);
+  // An empty output is legitimate, but only when the learner has said so
+  // explicitly. Otherwise a forgotten textarea would silently grade as "".
+  const outputsReady =
+    outputs.length > 0 && outputs.every((o, i) => o.trim().length > 0 || noOutput[i] === true);
 
   return (
     <section className="card p-5 sm:p-6">
@@ -139,7 +158,13 @@ export function ChallengeRunner({
         <div>
           <h2 className="font-semibold">Your solution</h2>
           <p className="text-xs text-muted mt-0.5">
-            Define a function <code className="font-mono text-primary">{functionName}</code>.
+            {isStdout ? (
+              <>Write a complete {languageLabel} program that reads from standard input.</>
+            ) : (
+              <>
+                Define a function <code className="font-mono text-primary">{functionName}</code>.
+              </>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -149,18 +174,50 @@ export function ChallengeRunner({
 
       <CodeEditor language={language} value={code} onChange={setCode} height="320px" ariaLabel="Challenge solution editor" />
 
-      <div className="flex flex-wrap gap-2 mt-4">
-        <Button size="sm" variant="secondary" onClick={runPublic} disabled={running}>
-          <Play className="h-3.5 w-3.5" /> {running ? "Running…" : "Run public tests"}
-        </Button>
-        <Button size="sm" onClick={submitForHidden} disabled={submitting || !allPublicPassed} title={allPublicPassed ? "" : "Pass public tests first"}>
-          <Send className="h-3.5 w-3.5" /> {submitting ? "Grading…" : "Submit to hidden tests"}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => setCode(starterCode || "# Write your solution\n")}>
-          Reset
-        </Button>
-      </div>
-      {!allPublicPassed && localResults ? (
+      {isStdout ? (
+        <StdoutGradingPanel
+          hiddenInputs={hiddenInputs}
+          outputs={outputs}
+          noOutput={noOutput}
+          onChange={(next) => setOutputs(next)}
+          onToggleNoOutput={(i) => {
+            setNoOutput((prev) => {
+              const next = [...prev];
+              next[i] = !next[i];
+              return next;
+            });
+            // Ticking "prints nothing" clears any pasted text, and pasting
+            // text again clears the tick, so the two can never disagree.
+            setOutputs((prev) => {
+              const next = [...prev];
+              next[i] = noOutput[i] ? (next[i] ?? "") : "";
+              return next;
+            });
+          }}
+          submitting={submitting}
+          onSubmit={() => void submitForHidden({ outputs })}
+          ready={outputsReady}
+        />
+      ) : (
+        <div className="flex flex-wrap gap-2 mt-4">
+          <Button size="sm" variant="secondary" onClick={runPublic} disabled={running}>
+            <Play className="h-3.5 w-3.5" /> {running ? "Running…" : "Run public tests"}
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => void submitForHidden()}
+            disabled={submitting || !allPublicPassed}
+            title={allPublicPassed ? "" : "Pass public tests first"}
+          >
+            <Send className="h-3.5 w-3.5" /> {submitting ? "Grading…" : "Submit to hidden tests"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setCode(starterCode || "# Write your solution\n")}>
+            Reset
+          </Button>
+        </div>
+      )}
+
+      {!isStdout && !allPublicPassed && localResults ? (
         <p className="text-xs text-muted mt-2">Pass all public tests locally before submitting to the hidden test grader.</p>
       ) : null}
 
@@ -169,11 +226,23 @@ export function ChallengeRunner({
           <p className="text-sm font-medium mb-2">Public test results</p>
           <ul className="space-y-2">
             {localResults.map((r, i) => (
-              <li key={i} className={cn("flex items-start gap-2 rounded-lg border p-2.5 text-sm", r.passed ? "border-primary/40 bg-primary-soft" : "border-rose-300 bg-rose-50 dark:bg-rose-950/40")}>
-                {r.passed ? <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 text-rose-500 mt-0.5 shrink-0" />}
+              <li
+                key={i}
+                className={cn(
+                  "flex items-start gap-2 rounded-lg border p-2.5 text-sm",
+                  r.passed ? "border-primary/40 bg-primary-soft" : "border-rose-300 bg-rose-50 dark:bg-rose-950/40"
+                )}
+              >
+                {r.passed ? (
+                  <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-rose-500 mt-0.5 shrink-0" />
+                )}
                 <div className="min-w-0">
                   <span className="font-medium">{r.name}</span>
-                  {!r.passed && r.error ? <pre className="text-xs text-muted mt-1 whitespace-pre-wrap overflow-x-auto">{r.error}</pre> : null}
+                  {!r.passed && r.error ? (
+                    <pre className="text-xs text-muted mt-1 whitespace-pre-wrap overflow-x-auto">{r.error}</pre>
+                  ) : null}
                 </div>
               </li>
             ))}
@@ -186,11 +255,23 @@ export function ChallengeRunner({
           <p className="text-sm font-medium mb-2">Hidden test results (server-validated)</p>
           <ul className="space-y-2">
             {(submitted.results ?? []).map((r, i) => (
-              <li key={i} className={cn("flex items-start gap-2 rounded-lg border p-2.5 text-sm", r.passed ? "border-primary/40 bg-primary-soft" : "border-rose-300 bg-rose-50 dark:bg-rose-950/40")}>
-                {r.passed ? <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 text-rose-500 mt-0.5 shrink-0" />}
+              <li
+                key={i}
+                className={cn(
+                  "flex items-start gap-2 rounded-lg border p-2.5 text-sm",
+                  r.passed ? "border-primary/40 bg-primary-soft" : "border-rose-300 bg-rose-50 dark:bg-rose-950/40"
+                )}
+              >
+                {r.passed ? (
+                  <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-rose-500 mt-0.5 shrink-0" />
+                )}
                 <div className="min-w-0">
                   <span className="font-medium">{r.name}</span>
-                  {!r.passed && r.error ? <pre className="text-xs text-muted mt-1 whitespace-pre-wrap overflow-x-auto">{r.error}</pre> : null}
+                  {!r.passed && r.error ? (
+                    <pre className="text-xs text-muted mt-1 whitespace-pre-wrap overflow-x-auto">{r.error}</pre>
+                  ) : null}
                 </div>
               </li>
             ))}
@@ -198,6 +279,95 @@ export function ChallengeRunner({
           </ul>
         </div>
       ) : null}
+
+      <p className="text-[11px] text-muted mt-4">
+        Challenge <code className="font-mono">{slug}</code> · {xpReward} XP
+      </p>
     </section>
+  );
+}
+
+/**
+ * Output-based grading UI.
+ *
+ * Shows one block per hidden test with its input, and collects the
+ * output the learner observed locally. The expected output is compared
+ * server-side and never sent to the browser.
+ */
+function StdoutGradingPanel({
+  hiddenInputs,
+  outputs,
+  noOutput,
+  onChange,
+  onToggleNoOutput,
+  submitting,
+  onSubmit,
+  ready,
+}: {
+  hiddenInputs: string[];
+  outputs: string[];
+  noOutput: boolean[];
+  onChange: (next: string[]) => void;
+  onToggleNoOutput: (index: number) => void;
+  submitting: boolean;
+  onSubmit: () => void;
+  ready: boolean;
+}) {
+  return (
+    <div className="mt-4 space-y-3">
+      <p className="text-sm text-muted">
+        Run your program once per input below, then paste what it prints. If your program prints nothing for a
+        test, tick that box instead of leaving the textarea empty.
+      </p>
+      {hiddenInputs.map((input, i) => {
+        const id = `stdout-${i}`;
+        const printsNothing = noOutput[i] === true;
+        return (
+          <div key={i} className="rounded-lg border border-border bg-surface2 p-3">
+            <p className="text-xs font-medium text-muted mb-1">Test {i + 1} — input</p>
+            <pre className="text-xs font-mono whitespace-pre-wrap mb-2 max-h-24 overflow-y-auto">
+              {input || "(no input)"}
+            </pre>
+            <label className="text-xs font-medium text-muted block mb-1" htmlFor={id}>
+              Your output
+            </label>
+            <textarea
+              id={id}
+              value={outputs[i] ?? ""}
+              disabled={printsNothing}
+              onChange={(e) => {
+                const next = [...outputs];
+                next[i] = e.target.value;
+                onChange(next);
+                if (e.target.value.length > 0 && noOutput[i]) onToggleNoOutput(i);
+              }}
+              rows={2}
+              spellCheck={false}
+              placeholder={printsNothing ? "This program prints nothing for this input." : "Paste the exact output here…"}
+              className="w-full rounded-lg border border-border bg-surface p-2 text-xs font-mono disabled:opacity-60"
+            />
+            <label className="mt-2 flex items-center gap-1.5 text-xs text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={printsNothing}
+                onChange={() => onToggleNoOutput(i)}
+                className="rounded border-border"
+              />
+              My program prints nothing for this input
+            </label>
+          </div>
+        );
+      })}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={onSubmit} disabled={submitting || !ready}>
+          <Send className="h-3.5 w-3.5" /> {submitting ? "Grading…" : "Submit output for grading"}
+        </Button>
+        {!ready ? (
+          <span className="text-xs text-muted self-center">
+            Give an output for every test, or tick &ldquo;prints nothing&rdquo;.
+          </span>
+        ) : null}
+      </div>
+    </div>
   );
 }

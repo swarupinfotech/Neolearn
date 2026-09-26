@@ -32,9 +32,24 @@ export function isQuestionCorrect(q: QuestionShape, answer: unknown): boolean {
   switch (q.type) {
     case "MCQ":
     case "TRUE_FALSE":
-    case "CORRECT": {
+    case "CORRECT":
+    // Debugging and scenario questions are single-answer judgements, just
+    // like an MCQ — the difference is presentation, not grading.
+    case "DEBUGGING":
+    case "SCENARIO": {
       const a = norm(answer);
       return list.some((c) => norm(c) === a);
+    }
+    case "MULTI_SELECT": {
+      // Correct only when every required option is chosen and nothing
+      // extra is. Order does not matter.
+      const chosen = toAnswerSet(answer);
+      if (chosen === null) return false;
+      const required = toAnswerSet(list);
+      if (required === null) return false;
+      if (chosen.size !== required.size) return false;
+      for (const c of required) if (!chosen.has(c)) return false;
+      return true;
     }
     case "FILL":
     case "OUTPUT": {
@@ -65,6 +80,17 @@ export function isQuestionCorrect(q: QuestionShape, answer: unknown): boolean {
   }
 }
 
+/** Coerce a multi-select answer into a comparable set. Null when unusable. */
+function toAnswerSet(value: unknown): Set<string> | null {
+  if (!Array.isArray(value)) return null;
+  const out = new Set<string>();
+  for (const v of value) {
+    if (typeof v === "string" && v.trim().length === 0) continue;
+    out.add(norm(v));
+  }
+  return out.size > 0 ? out : null;
+}
+
 function normalizePairs(value: unknown): [string, string][] {
   if (Array.isArray(value)) {
     return value.map((p) => {
@@ -86,11 +112,12 @@ export interface QuizResult {
   score: number;
   maxScore: number;
   percent: number;
+  correctCount: number;
   passed: boolean;
   rewardedXp: number;
   suspicious: boolean;
   feedback: { questionId: string; correct: boolean; explanation?: string | null }[];
-  attempt: { id: string; attemptNo: number; score: number; maxScore: number; passed: boolean };
+  attempt: { id: string; attemptNo: number; score: number; maxScore: number; correctCount: number; passed: boolean };
 }
 
 const MIN_MS_PER_QUESTION = 500;
@@ -101,8 +128,10 @@ export async function submitQuiz(userId: string, input: unknown, ip: string): Pr
   const rl = await rateLimit(actorKey("quizSubmit", `${userId}:${ip}`), STRICT_RATE_LIMITS.quizSubmit);
   if (!rl.ok) return { ok: false, error: "Too many submissions. Slow down." };
 
-  const quiz = await prisma.quiz.findUnique({
-    where: { id: parsed.data.quizId },
+  // Grading is server-side, so the status check has to live here too: the UI
+  // route is not the only way in, and a draft quiz must not award XP.
+  const quiz = await prisma.quiz.findFirst({
+    where: { id: parsed.data.quizId, status: "PUBLISHED" },
     include: { questions: { orderBy: { order: "asc" } } },
   });
   if (!quiz || quiz.questions.length === 0) return { ok: false, error: "Quiz not found." };
@@ -123,6 +152,7 @@ export async function submitQuiz(userId: string, input: unknown, ip: string): Pr
 
   const percent = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
   const passed = percent >= quiz.passingScore;
+  const correctCount = feedback.filter((f) => f.correct).length;
 
   // Anti-cheat: reject implausibly fast completions.
   const durationMs =
@@ -142,6 +172,7 @@ export async function submitQuiz(userId: string, input: unknown, ip: string): Pr
       answers: answers as object,
       score,
       maxScore,
+      correctCount,
       passed,
       passRewarded: false,
       completedAt: new Date(),
@@ -161,6 +192,8 @@ export async function submitQuiz(userId: string, input: unknown, ip: string): Pr
     }
     await recordActivity(userId);
     await recordDailyTask(userId, "quiz", passed);
+    // A strong score is tracked separately from merely passing.
+    if (percent >= 80) await recordDailyTask(userId, "quiz_high_score", true);
     await checkAchievements(userId);
     await notify({
       userId,
@@ -177,6 +210,7 @@ export async function submitQuiz(userId: string, input: unknown, ip: string): Pr
     score,
     maxScore,
     percent,
+    correctCount,
     passed,
     rewardedXp,
     suspicious,
@@ -186,6 +220,7 @@ export async function submitQuiz(userId: string, input: unknown, ip: string): Pr
       attemptNo: attempt.attemptNo,
       score,
       maxScore,
+      correctCount,
       passed,
     },
   };

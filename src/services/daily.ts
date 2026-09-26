@@ -9,7 +9,26 @@ export const DAILY_TASKS = [
   { key: "challenge", label: "Solve 1 coding challenge", target: 1 },
 ] as const;
 
-export type DailyTaskKey = (typeof DAILY_TASKS)[number]["key"];
+/**
+ * Every task type a daily mission can ask for. The daily set is assembled
+ * from these, so a mission can demand projects, strong quiz scores or
+ * review activity as well as the three core actions.
+ *
+ * The `project` task fires when a project submission passes, which is why
+ * it is phrased as a whole submission rather than an individual task.
+ */
+export const ALL_DAILY_TASKS = [
+  { key: "lesson", label: "Complete 1 lesson", target: 1 },
+  { key: "quiz", label: "Pass 1 quiz", target: 1 },
+  { key: "quiz_high_score", label: "Score 80%+ on a quiz", target: 1 },
+  { key: "challenge", label: "Solve 1 coding challenge", target: 1 },
+  { key: "project", label: "Get a project submission to pass", target: 1 },
+  { key: "review", label: "Review 1 completed lesson", target: 1 },
+] as const;
+
+export type DailyTaskKey = (typeof ALL_DAILY_TASKS)[number]["key"];
+
+const DAILY_TASK_KEYS = new Set<string>(ALL_DAILY_TASKS.map((t) => t.key));
 
 export interface DailyState {
   dateKey: string;
@@ -37,9 +56,10 @@ export async function getDailyMission(userId: string): Promise<DailyState> {
     key: t.key,
     label: t.label,
     target: t.target,
+    // A task with target > 1 is satisfied once the action happened that day.
     done: tasksDone[t.key] ? t.target : 0,
   }));
-  const allComplete = tasks.every((t) => t.done >= t.target);
+  const allComplete = tasks.length > 0 && tasks.every((t) => t.done >= t.target);
 
   return {
     dateKey: today,
@@ -50,10 +70,18 @@ export async function getDailyMission(userId: string): Promise<DailyState> {
   };
 }
 
-/** Mark progress without allowing resets (only ever goes forward). */
+/**
+ * Mark progress without allowing resets (only ever goes forward).
+ *
+ * Unknown keys are ignored rather than written, so a stale or tampered
+ * caller can never inject arbitrary state into the daily record.
+ */
 export async function recordDailyTask(userId: string, key: DailyTaskKey, done: boolean) {
   if (!done) return;
+  if (!DAILY_TASK_KEYS.has(key)) return;
   const state = await getDailyMission(userId);
+  // Nothing to record when today's mission does not ask for this action.
+  if (!state.tasks.some((t) => t.key === key)) return;
   const now = new Date();
   const mission = await prisma.dailyMission.upsert({
     where: { dateKey: dateKey(now) },
